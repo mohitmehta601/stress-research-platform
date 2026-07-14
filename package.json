@@ -1,0 +1,15 @@
+{
+  "name": "stress-research-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A privacy-conscious stress research platform with FastAPI and MongoDB.",
+  "scripts": {
+    "dev": "python -m uvicorn backend.main:app --reload",
+    "start": "python -m uvicorn backend.main:app",
+    "web": "npm --prefix frontend run dev",
+    "app": "npm --prefix app run dev",
+    "build:web": "npm --prefix frontend run build",
+    "build:app": "npm --prefix app run build",
+    "test": "python -m unittest discover -s backend/tests -v"
+  }
+}
