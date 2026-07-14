@@ -20,6 +20,32 @@ const numberFromEnv = (key, fallback) => {
   return Number.isFinite(value) ? value : fallback;
 };
 
+const defaultCorsOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174",
+  "http://localhost:5175",
+  "http://127.0.0.1:5175",
+  "https://stress-research-platform-ashen.vercel.app"
+];
+
+const normalizedUrl = (value) => (value || "").replace(/\/$/, "");
+
+const listFromEnv = (value) => (value || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const corsOrigins = Array.from(new Set([
+  ...defaultCorsOrigins,
+  normalizedUrl(process.env.FRONTEND_URL),
+  normalizedUrl(process.env.MOBILE_URL),
+  ...listFromEnv(process.env.CORS_ORIGINS)
+].filter(Boolean)));
+
 export const settings = {
   appName: process.env.APP_NAME || "Stress Research Platform API",
   appEnv: process.env.APP_ENV || "development",
@@ -28,10 +54,7 @@ export const settings = {
   mongodbUri: process.env.MONGODB_URI || "mongodb://localhost:27017",
   mongodbDirectUri: process.env.MONGODB_DIRECT_URI || "",
   mongodbDatabase: process.env.MONGODB_DATABASE || "stress_research_platform",
-  corsOrigins: (process.env.CORS_ORIGINS || "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean),
+  corsOrigins,
   jwtSecret: process.env.JWT_SECRET || "development-only-change-me-32-characters-minimum",
   jwtAlgorithm: process.env.JWT_ALGORITHM || "HS256",
   accessTokenMinutes: numberFromEnv("ACCESS_TOKEN_MINUTES", 60),

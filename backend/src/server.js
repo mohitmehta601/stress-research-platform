@@ -10,13 +10,33 @@ import apiRouter from "./routes/api.js";
 
 const app = express();
 
-app.use(cors({
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  if (settings.corsOrigins.includes(origin)) return true;
+
+  try {
+    const { hostname, protocol } = new URL(origin);
+    return (
+      protocol === "https:"
+      && /^stress-research-platform(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+const corsOptions = {
   origin(origin, callback) {
-    if (!origin || settings.corsOrigins.includes(origin)) return callback(null, true);
+    if (isAllowedOrigin(origin)) return callback(null, true);
     return callback(null, false);
   },
-  credentials: true
-}));
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());

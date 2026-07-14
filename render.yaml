@@ -2,10 +2,17 @@ services:
   - type: web
     name: stress-research-platform-api
     runtime: node
-    buildCommand: npm --prefix backend install
-    startCommand: npm --prefix backend start
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
     envVars:
       - key: APP_ENV
         value: production
       - key: NODE_VERSION
         value: 20
+      - key: API_PREFIX
+        value: /api
+      - key: FRONTEND_URL
+        value: https://stress-research-platform-ashen.vercel.app
+      - key: CORS_ORIGINS
+        value: https://stress-research-platform-ashen.vercel.app,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175
