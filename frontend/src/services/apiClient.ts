@@ -3,7 +3,12 @@ import type {
   QuestionnaireRecord, DoctorAssessment, DashboardSummary, AuthUser, AccessRequest, DashboardNotification
 } from "../types";
 
-const API_BASE = import.meta.env?.VITE_API_URL || "http://127.0.0.1:8010/api";
+function normalizeApiBase(url?: string): string {
+  const baseUrl = (url || "http://127.0.0.1:8010/api").replace(/\/$/, "");
+  return baseUrl.endsWith("/api") ? baseUrl : `${baseUrl}/api`;
+}
+
+const API_BASE = normalizeApiBase(import.meta.env?.VITE_API_URL);
 const TOKEN_KEY = "srp_token";
 const REFRESH_TOKEN_KEY = "srp_refresh_token";
 const USER_KEY = "srp_user";

@@ -1,11 +1,11 @@
 services:
   - type: web
     name: stress-research-platform-api
-    runtime: python
-    buildCommand: pip install -r backend/requirements.txt
-    startCommand: python backend/scripts/start.py
+    runtime: node
+    buildCommand: npm --prefix backend install
+    startCommand: npm --prefix backend start
     envVars:
       - key: APP_ENV
         value: production
-      - key: PYTHON_VERSION
-        value: 3.12.7
+      - key: NODE_VERSION
+        value: 20

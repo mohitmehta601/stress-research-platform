@@ -1,1 +1,0 @@
-"""MongoDB connection package."""

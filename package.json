@@ -2,15 +2,17 @@
   "name": "stress-research-platform",
   "version": "1.0.0",
   "private": true,
-  "description": "A privacy-conscious stress research platform with FastAPI and MongoDB.",
+  "description": "A privacy-conscious stress research platform with Express and MongoDB.",
   "scripts": {
-    "dev": "python -m uvicorn backend.main:app --reload",
-    "start": "python backend/scripts/start.py",
-    "postinstall": "python -m pip install -r backend/requirements.txt",
+    "dev": "npm --prefix backend run dev",
+    "start": "npm --prefix backend start",
+    "postinstall": "npm --prefix backend install",
     "web": "npm --prefix frontend run dev",
     "app": "npm --prefix app run dev",
     "build:web": "npm --prefix frontend run build",
     "build:app": "npm --prefix app run build",
-    "test": "python -m unittest discover -s backend/tests -v"
+    "sync:mongodb": "npm --prefix backend run sync:mongodb",
+    "create:super-admin": "npm --prefix backend run create:super-admin",
+    "test": "node --check backend/src/server.js"
   }
 }
