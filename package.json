@@ -5,7 +5,8 @@
   "description": "A privacy-conscious stress research platform with FastAPI and MongoDB.",
   "scripts": {
     "dev": "python -m uvicorn backend.main:app --reload",
-    "start": "python -m uvicorn backend.main:app",
+    "start": "python backend/scripts/start.py",
+    "postinstall": "python -m pip install -r backend/requirements.txt",
     "web": "npm --prefix frontend run dev",
     "app": "npm --prefix app run dev",
     "build:web": "npm --prefix frontend run build",

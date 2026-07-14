@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,9 +16,27 @@ class Settings(BaseSettings):
     access_token_minutes: int = 60
     refresh_token_days: int = 30
     consent_version: str = "1.0"
-    bootstrap_super_admin_email: str | None = None
-    bootstrap_super_admin_password: str | None = None
-    bootstrap_super_admin_name: str = "Super Administrator"
+    bootstrap_super_admin_email: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BOOTSTRAP_SUPER_ADMIN_EMAIL",
+            "BOOTSTRAP_RESEARCHER_EMAIL",
+        ),
+    )
+    bootstrap_super_admin_password: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BOOTSTRAP_SUPER_ADMIN_PASSWORD",
+            "BOOTSTRAP_RESEARCHER_PASSWORD",
+        ),
+    )
+    bootstrap_super_admin_name: str = Field(
+        default="Super Administrator",
+        validation_alias=AliasChoices(
+            "BOOTSTRAP_SUPER_ADMIN_NAME",
+            "BOOTSTRAP_RESEARCHER_NAME",
+        ),
+    )
     frontend_url: str = "http://localhost:5173"
     mobile_url: str = "http://localhost:5174"
     brevo_api_key: str | None = None
