@@ -89,28 +89,27 @@ export default function Physiological() {
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-muted/60 border-b border-border">
-                {["Participant", "Session", "Condition", "ECG", "Heart Rate", "HRV", "EDA", "Temperature", "Respiration", "Accel.", "Battery", "Sample Rate", "Quality"].map((heading) => (
+                {["Participant", "Session", "Condition", "Mean Temp", "RMSSD", "SDNN", "Heart Rate", "SpO2", "SCL", "SCR Peaks", "SCR Mean", "Quality"].map((heading) => (
                   <th key={heading} className="text-left px-2.5 py-2.5 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold whitespace-nowrap">{heading}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={13} className="text-center py-12 text-muted-foreground">No records</td></tr>
+                <tr><td colSpan={12} className="text-center py-12 text-muted-foreground">No records</td></tr>
               ) : filtered.map((record, index) => (
                 <tr key={record.id} className={`border-b border-border/50 ${index % 2 === 1 ? "bg-muted/20" : ""}`}>
                   <td className="px-2.5 py-2 font-mono font-semibold text-[#1a3461]">{record.participantId}</td>
                   <td className="px-2.5 py-2 font-mono text-muted-foreground">{record.sessionId}</td>
                   <td className="px-2.5 py-2">{conditionBadge(record.condition)}</td>
-                  <td className="px-2.5 py-2"><CheckCell value={record.ecgCollected} /></td>
-                  <td className="px-2.5 py-2"><Metric value={record.heartRate} unit="bpm" /></td>
-                  <td className="px-2.5 py-2"><Metric value={record.hrv} unit="ms" /></td>
-                  <td className="px-2.5 py-2"><Metric value={record.eda} unit="uS" /></td>
-                  <td className="px-2.5 py-2"><Metric value={record.temperature} unit="C" /></td>
-                  <td className="px-2.5 py-2"><Metric value={record.respiration} unit="/min" /></td>
-                  <td className="px-2.5 py-2"><CheckCell value={record.accelerometer} /></td>
-                  <td className="px-2.5 py-2"><Metric value={record.battery} unit="%" /></td>
-                  <td className="px-2.5 py-2"><Metric value={record.samplingRate} unit="Hz" /></td>
+                  <td className="px-2.5 py-2"><Metric value={record.meanTemp} unit="C" /></td>
+                  <td className="px-2.5 py-2"><Metric value={record.rmssdMs} unit="ms" /></td>
+                  <td className="px-2.5 py-2"><Metric value={record.sdnnMs} unit="ms" /></td>
+                  <td className="px-2.5 py-2"><Metric value={record.heartRateBpm} unit="bpm" /></td>
+                  <td className="px-2.5 py-2"><Metric value={record.spo2Percent} unit="%" /></td>
+                  <td className="px-2.5 py-2"><Metric value={record.sclUs} unit="uS" /></td>
+                  <td className="px-2.5 py-2"><Metric value={record.scrPeakCount} /></td>
+                  <td className="px-2.5 py-2"><Metric value={record.scrMean} /></td>
                   <td className="px-2.5 py-2">{qualityBadge(record.signalQuality)}</td>
                 </tr>
               ))}

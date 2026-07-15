@@ -16,7 +16,7 @@ const NAV_ITEMS = [
   { path: "/researcher/export", label: "Dataset Export", icon: Download },
   { path: "/researcher/settings", label: "Settings & Access", icon: Settings },
 ];
-
+                  
 export function Sidebar() {
   const navigate = useNavigate();
 

@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   FlaskConical,
   Heart,
+  Shield,
   ShieldCheck,
   Thermometer,
   Users,
@@ -30,10 +31,12 @@ import {
 } from "../components/StatusBadge";
 import {
   getDashboardSummary,
+  getLatestThingSpeakReading,
   getSessions,
 } from "../services/apiClient";
 import type {
   DashboardSummary,
+  SensorSnapshot,
   Session,
 } from "../types";
 
@@ -80,6 +83,8 @@ export default function Dashboard() {
     useState<DashboardSummary | null>(null);
 
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [latestSensor, setLatestSensor] =
+    useState<SensorSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -91,16 +96,18 @@ export default function Dashboard() {
       setError("");
 
       try {
-        const [dashboardSummary, researchSessions] =
+        const [dashboardSummary, researchSessions, thingSpeakReading] =
           await Promise.all([
             getDashboardSummary(),
             getSessions(),
+            getLatestThingSpeakReading(),
           ]);
 
         if (!active) return;
 
         setSummary(dashboardSummary);
         setSessions(researchSessions);
+        setLatestSensor(thingSpeakReading);
       } catch (loadError) {
         if (!active) return;
 
@@ -256,37 +263,76 @@ export default function Dashboard() {
     hasConditionData,
   } = dashboardData;
 
+  const hasSavedSensorRecords = summary.sensorRecords > 0;
+  const sensorValue = (
+    averageValue: number,
+    latestValue: number | null | undefined,
+  ) => (hasSavedSensorRecords ? averageValue : latestValue);
+  const sourceText = hasSavedSensorRecords
+    ? "Average values calculated from saved research observations."
+    : latestSensor
+      ? "Latest values fetched from the configured ThingSpeak channel."
+      : "No saved observations or live ThingSpeak reading available.";
+
   const physiologicalMetrics = [
     {
-      label: "Average Heart Rate",
-      value: summary.avgHeartRate,
-      unit: "bpm",
-      icon: Heart,
-      iconClassName: "text-red-500",
+      label: "Mean Temp",
+      value: sensorValue(summary.avgTemperature, latestSensor?.meanTemp),
+      unit: "C",
+      icon: Thermometer,
+      iconClassName: "text-orange-500",
     },
     {
-      label: "Average HRV",
-      value: summary.avgHrv,
+      label: "RMSSD",
+      value: sensorValue(summary.avgHrv, latestSensor?.rmssdMs),
       unit: "ms",
       icon: Waves,
       iconClassName: "text-blue-500",
     },
     {
-      label: "Average Temperature",
-      value: summary.avgTemperature,
-      unit: "°C",
-      icon: Thermometer,
-      iconClassName: "text-orange-500",
+      label: "SDNN",
+      value: sensorValue(summary.avgSdnn, latestSensor?.sdnnMs),
+      unit: "ms",
+      icon: Waves,
+      iconClassName: "text-violet-600",
     },
     {
-      label: "Average EDA",
-      value: summary.avgEda,
-      unit: "μS",
+      label: "Heart Rate",
+      value: sensorValue(summary.avgHeartRate, latestSensor?.heartRateBpm),
+      unit: "bpm",
+      icon: Heart,
+      iconClassName: "text-red-500",
+    },
+    {
+      label: "SpO2",
+      value: sensorValue(summary.avgSpo2, latestSensor?.spo2Percent),
+      unit: "%",
+      icon: Shield,
+      iconClassName: "text-emerald-600",
+    },
+    {
+      label: "SCL",
+      value: sensorValue(summary.avgEda, latestSensor?.sclUs),
+      unit: "uS",
       icon: Zap,
-      iconClassName: "text-yellow-600",
+      iconClassName: "text-teal-600",
     },
     {
-      label: "Average Stress Score",
+      label: "SCR Peaks",
+      value: sensorValue(summary.avgScrPeakCount, latestSensor?.scrPeakCount),
+      unit: "count",
+      icon: Activity,
+      iconClassName: "text-amber-600",
+    },
+    {
+      label: "SCR Mean",
+      value: sensorValue(summary.avgScrMean, latestSensor?.scrMean),
+      unit: "",
+      icon: Activity,
+      iconClassName: "text-indigo-600",
+    },
+    {
+      label: "Stress Score",
       value: summary.avgStressScore,
       unit: "/100",
       icon: Activity,
@@ -340,12 +386,11 @@ export default function Dashboard() {
           </h2>
 
           <p className="mt-0.5 text-[10px] text-muted-foreground">
-            Average values calculated from available research
-            observations.
+            {sourceText}
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-9">
           {physiologicalMetrics.map(
             ({
               label,

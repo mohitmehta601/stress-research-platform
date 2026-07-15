@@ -17,7 +17,7 @@ interface StatusBadgeProps {
   dot?: boolean;
   className?: string;
 }
-
+                   
 export function StatusBadge({ label, variant, dot = false, className }: StatusBadgeProps) {
   return (
     <span className={clsx(

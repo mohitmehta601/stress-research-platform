@@ -67,5 +67,7 @@ export const settings = {
   mobileUrl: process.env.MOBILE_URL || "http://localhost:5174",
   brevoApiKey: process.env.BREVO_API_KEY || "",
   brevoSenderEmail: process.env.BREVO_SENDER_EMAIL || "",
-  brevoSenderName: process.env.BREVO_SENDER_NAME || "Stress Research Platform"
+  brevoSenderName: process.env.BREVO_SENDER_NAME || "Stress Research Platform",
+  thingSpeakApiKey: process.env.THINGSPEAK_API_KEY || process.env.ThingSpeak_API_KEY || process.env.ThinkSpeak_API_KEY || "",
+  thingSpeakChannelId: process.env.THINGSPEAK_CHANNEL_ID || process.env.ThingSpeak_CHANNEL_ID || process.env.ThinkSpeak_CHANNEL_ID || ""
 };

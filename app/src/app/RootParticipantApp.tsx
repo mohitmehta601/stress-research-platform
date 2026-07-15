@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react"
+﻿import { useState, useEffect, useMemo, useRef } from "react"
 import {
   ArrowLeft, Menu, Check, X, ChevronRight, ChevronDown,
   Home, Clock, BarChart2, User, Users, Search, Download, Save,
@@ -358,9 +358,23 @@ function RegisterScreen({ nav }: { nav: Nav }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [message, setMessage] = useState("")
-  const [otpToken, setOtpToken] = useState("")
+  const [otpRequested, setOtpRequested] = useState(false)
   const [otpCode, setOtpCode] = useState("")
   const [otpEmail, setOtpEmail] = useState("")
+  const [devOtp, setDevOtp] = useState("")
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null)
+  const [now, setNow] = useState(Date.now())
+  const otpSecondsLeft = useMemo(() => {
+    if (!otpExpiresAt) return 0
+    return Math.max(0, Math.ceil((otpExpiresAt - now) / 1000))
+  }, [now, otpExpiresAt])
+  const otpExpired = otpRequested && otpSecondsLeft <= 0
+  const otpTimer = `${String(Math.floor(otpSecondsLeft / 60)).padStart(2, "0")}:${String(otpSecondsLeft % 60).padStart(2, "0")}`
+  useEffect(() => {
+    if (!otpRequested) return undefined
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [otpRequested])
   const submit = async () => {
     if (!agreed || busy) return
     setMessage("")
@@ -374,11 +388,13 @@ function RegisterScreen({ nav }: { nav: Nav }) {
         nav("staff-login")
         return
       }
-      const result = await api.register(name.trim(), email.trim().toLowerCase(), password)
-      setOtpToken(result.otp_token)
-      setOtpEmail(result.email)
+      const result = await api.requestRegistrationOtp(name.trim(), email.trim().toLowerCase())
+      setOtpRequested(true)
+      setOtpEmail(result.email || email.trim().toLowerCase())
       setOtpCode("")
-      setMessage(result.message || "Verification code sent to your email.")
+      setDevOtp(result.dev_otp || result.otp_code || "")
+      setOtpExpiresAt(Date.now() + (result.expires_in_seconds ? result.expires_in_seconds * 1000 : Number(result.expires_in_minutes || 10) * 60 * 1000))
+      setMessage(result.message || "OTP sent to your email.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed")
     } finally {
@@ -390,9 +406,10 @@ function RegisterScreen({ nav }: { nav: Nav }) {
     setError("")
     setMessage("")
     if (otpCode.trim().length !== 6) { setError("Enter the 6-digit verification code"); return }
+    if (otpExpired) { setError("OTP expired. Please resend the code."); return }
     setBusy(true)
     try {
-      await api.verifyRegistrationOtp(otpToken, otpCode.trim())
+      await api.register(name.trim(), email.trim().toLowerCase(), password, otpCode.trim())
       nav("consent")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed")
@@ -401,9 +418,11 @@ function RegisterScreen({ nav }: { nav: Nav }) {
     }
   }
   const backToDetails = () => {
-    setOtpToken("")
+    setOtpRequested(false)
     setOtpCode("")
     setOtpEmail("")
+    setDevOtp("")
+    setOtpExpiresAt(null)
     setMessage("")
     setPassword("")
     setConfirmPassword("")
@@ -420,7 +439,7 @@ function RegisterScreen({ nav }: { nav: Nav }) {
           </div>
         </div>
         <Card className="p-4 space-y-3">
-          {otpToken ? (
+          {otpRequested ? (
             <>
               <div className="text-center py-2">
                 <p className="text-base font-bold text-gray-900">Verify your email</p>
@@ -437,6 +456,15 @@ function RegisterScreen({ nav }: { nav: Nav }) {
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 px-4 text-center font-mono text-xl font-bold tracking-[0.35em] text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-2 focus:border-blue-400"
                 />
               </div>
+              <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 flex items-center justify-between">
+                <span className="text-xs text-gray-500">OTP expires in</span>
+                <span className="text-xs font-bold" style={{ color: otpExpired ? RED : BLUE }}>{otpExpired ? "Expired" : otpTimer}</span>
+              </div>
+              {devOtp && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl p-2">
+                  Testing OTP: <span className="font-bold">{devOtp}</span>
+                </p>
+              )}
               <button onClick={backToDetails} className="text-xs font-semibold text-gray-500">Edit sign-up details</button>
               <button onClick={submit} disabled={busy} className="text-xs font-semibold" style={{ color: BLUE }}>
                 {busy ? "Sending..." : "Resend code"}
@@ -461,7 +489,7 @@ function RegisterScreen({ nav }: { nav: Nav }) {
             </>
           )}
         </Card>
-        {!otpToken && (
+        {!otpRequested && (
           <div className="flex items-start gap-3 px-1">
             <button onClick={() => setAgreed(!agreed)} className={`w-5 h-5 rounded flex-shrink-0 mt-0.5 border-2 flex items-center justify-center ${agreed ? "border-blue-600" : "border-gray-300 bg-white"}`} style={{ backgroundColor: agreed ? BLUE : undefined }}>
               {agreed && <Check size={12} className="text-white" />}
@@ -471,7 +499,7 @@ function RegisterScreen({ nav }: { nav: Nav }) {
         )}
         {error && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl p-2">{error}</p>}
         {message && <p className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-xl p-2">{message}</p>}
-        <Btn onClick={otpToken ? verifyRegistration : submit} color={(otpToken || agreed) && !busy ? BLUE : "#9CA3AF"}>{busy ? (otpToken ? "Verifying..." : "Creating account...") : (otpToken ? "Verify & Continue" : "Register")}</Btn>
+        <Btn onClick={otpRequested ? verifyRegistration : submit} color={(otpRequested || agreed) && !busy ? BLUE : "#9CA3AF"}>{busy ? (otpRequested ? "Verifying..." : "Sending OTP...") : (otpRequested ? "Verify & Continue" : "Send OTP")}</Btn>
         <p className="text-center text-sm text-gray-500 pb-4">Already have an account? <button onClick={() => nav("login")} className="font-semibold" style={{ color: BLUE }}>Login</button></p>
       </ScrollArea>
     </div>
@@ -1005,20 +1033,20 @@ function RelaxedRecordingScreen({ nav }: { nav: Nav }) {
   const secs = String(seconds % 60).padStart(2, "0")
   const pct = (seconds / 300) * 100
   const signals = [
-    { label: "Heart Rate", value: "72", unit: "bpm",  sparkType: "heart", color: RED   },
-    { label: "HRV (RMSSD)", value: "48", unit: "ms",   sparkType: "hrv",   color: BLUE  },
-    { label: "EDA",         value: "2.35",unit: "ÂµS",  sparkType: "eda",   color: TEAL  },
-    { label: "Temperature", value: "36.6",unit: "Â°C",  sparkType: "temp",  color: ORANGE},
-    { label: "Respiration", value: "14", unit: "brpm", sparkType: "resp",  color: "#7C3AED"},
-    { label: "ECG",         value: "Live",unit: "",    sparkType: "ecg",   color: RED   },
+    { label: "Mean Temp", value: "36.6", unit: "C", sparkType: "temp", color: ORANGE },
+    { label: "RMSSD", value: "48", unit: "ms", sparkType: "hrv", color: BLUE },
+    { label: "SDNN", value: "52", unit: "ms", sparkType: "hrv", color: "#7C3AED" },
+    { label: "Heart Rate", value: "72", unit: "bpm", sparkType: "heart", color: RED },
+    { label: "SpO2", value: "98", unit: "%", sparkType: "heart", color: GREEN },
+    { label: "SCL", value: "2.35", unit: "uS", sparkType: "eda", color: TEAL },
   ]
   const displaySignals = [
-    { label: "HR",   value: "72",   unit: "bpm", sparkType: "heart", color: RED },
-    { label: "HRV",  value: "48",   unit: "ms",  sparkType: "hrv",   color: BLUE },
-    { label: "GSR",  value: "0.41", unit: "kÎ©",  sparkType: "eda",   color: TEAL },
-    { label: "EDA",  value: "2.35", unit: "ÂµS",  sparkType: "eda",   color: TEAL },
-    { label: "TEMP", value: "36.6", unit: "Â°C",  sparkType: "temp",  color: ORANGE },
-    { label: "ECG",  value: "Live", unit: "",    sparkType: "ecg",   color: RED },
+    { label: "Temp", value: "36.6", unit: "C", sparkType: "temp", color: ORANGE },
+    { label: "RMSSD", value: "48", unit: "ms", sparkType: "hrv", color: BLUE },
+    { label: "SDNN", value: "52", unit: "ms", sparkType: "hrv", color: "#7C3AED" },
+    { label: "HR", value: "72", unit: "bpm", sparkType: "heart", color: RED },
+    { label: "SpO2", value: "98", unit: "%", sparkType: "heart", color: GREEN },
+    { label: "SCL", value: "2.35", unit: "uS", sparkType: "eda", color: TEAL },
   ]
   return (
     <div className="flex flex-col h-full bg-[#F0F4F8]">
@@ -1212,21 +1240,20 @@ function StressRecordingScreen({ nav }: { nav: Nav }) {
   const secs = String(seconds % 60).padStart(2, "0")
   const pct = (seconds / 300) * 100
   const signals = [
-    { label: "ECG",          value: "Live", unit: "",     sparkType: "ecg",   color: RED    },
-    { label: "Heart Rate",   value: "94",   unit: "bpm",  sparkType: "heart", color: RED    },
-    { label: "HRV (RMSSD)",  value: "28",   unit: "ms",   sparkType: "hrv",   color: ORANGE },
-    { label: "EDA",          value: "5.12", unit: "ÂµS",   sparkType: "eda",   color: ORANGE },
-    { label: "Temperature",  value: "37.1", unit: "Â°C",   sparkType: "temp",  color: "#7C3AED"},
-    { label: "Respiration",  value: "21",   unit: "brpm", sparkType: "resp",  color: TEAL   },
-    { label: "Accelerometer",value: "0.42", unit: "g",    sparkType: "accel", color: BLUE   },
+    { label: "Mean Temp", value: "37.1", unit: "C", sparkType: "temp", color: "#7C3AED" },
+    { label: "RMSSD", value: "28", unit: "ms", sparkType: "hrv", color: ORANGE },
+    { label: "SDNN", value: "34", unit: "ms", sparkType: "hrv", color: BLUE },
+    { label: "Heart Rate", value: "94", unit: "bpm", sparkType: "heart", color: RED },
+    { label: "SpO2", value: "97", unit: "%", sparkType: "heart", color: GREEN },
+    { label: "SCL", value: "5.12", unit: "uS", sparkType: "eda", color: ORANGE },
   ]
   const displaySignals = [
-    { label: "HR",   value: "94",   unit: "bpm", sparkType: "heart", color: RED },
-    { label: "HRV",  value: "28",   unit: "ms",  sparkType: "hrv",   color: ORANGE },
-    { label: "GSR",  value: "0.63", unit: "kÎ©",  sparkType: "eda",   color: TEAL },
-    { label: "EDA",  value: "5.12", unit: "ÂµS",  sparkType: "eda",   color: ORANGE },
-    { label: "TEMP", value: "37.1", unit: "Â°C",  sparkType: "temp",  color: "#7C3AED" },
-    { label: "ECG",  value: "Live", unit: "",    sparkType: "ecg",   color: RED },
+    { label: "Temp", value: "37.1", unit: "C", sparkType: "temp", color: "#7C3AED" },
+    { label: "RMSSD", value: "28", unit: "ms", sparkType: "hrv", color: ORANGE },
+    { label: "SDNN", value: "34", unit: "ms", sparkType: "hrv", color: BLUE },
+    { label: "HR", value: "94", unit: "bpm", sparkType: "heart", color: RED },
+    { label: "SpO2", value: "97", unit: "%", sparkType: "heart", color: GREEN },
+    { label: "SCL", value: "5.12", unit: "uS", sparkType: "eda", color: ORANGE },
   ]
   return (
     <div className="flex flex-col h-full bg-[#F0F4F8]">
@@ -1749,8 +1776,8 @@ function HistoryScreen({ nav }: { nav: Nav }) {
           const color = isRelaxed ? GREEN : ORANGE
           const complete = s.q
           const bits: { k: string; v: boolean | null }[] = [
-            { k: "HR", v: s.ecg }, { k: "HRV", v: s.hrv }, { k: "GSR", v: s.eda },
-            { k: "EDA", v: s.eda }, { k: "Temp", v: s.temp }, { k: "ECG", v: s.ecg }, { k: "Q", v: s.q },
+            { k: "HR", v: s.ecg }, { k: "RMSSD", v: s.hrv }, { k: "SDNN", v: s.sdnn },
+            { k: "SpO2", v: s.spo2 }, { k: "SCL", v: s.eda }, { k: "SCR", v: s.scrPeak || s.scrMean }, { k: "Q", v: s.q },
           ]
           return (
             <Card key={s.rawId ?? s.id} className="p-4">
@@ -1834,7 +1861,7 @@ function ParticipantDashboardScreen({ nav }: { nav: Nav }) {
   const protocolStressDone = completedSessions.some(s => s.cond === "Stress")
   const protocolCompleted = Number(protocolRelaxedDone) + Number(protocolStressDone)
   const progress = Math.round((protocolCompleted / requiredSessions) * 100)
-  const sensorSynced = sessions.filter(s => s.ecg || s.hrv || s.eda || s.temp).length
+  const sensorSynced = sessions.filter(s => s.ecg || s.hrv || s.sdnn || s.eda || s.temp || s.spo2 || s.scrPeak || s.scrMean).length
   const questionnaireSynced = sessions.filter(s => s.q).length
   const pendingSessions = sessions.filter(s => !(s.q))
   const chartData = [
@@ -1846,9 +1873,9 @@ function ParticipantDashboardScreen({ nav }: { nav: Nav }) {
   const nextCondition = !protocolRelaxedDone ? "Relaxed" : !protocolStressDone ? "Stress" : "Optional repeat"
 
   const sessionStatus = (session: Awaited<ReturnType<typeof api.getMySessions>>[number]) => {
-    if (session.q && (session.ecg || session.hrv || session.eda || session.temp)) return ["Synced", GREEN]
+    if (session.q && (session.ecg || session.hrv || session.sdnn || session.eda || session.temp || session.spo2 || session.scrPeak || session.scrMean)) return ["Synced", GREEN]
     const missing = [
-      !(session.ecg || session.hrv || session.eda || session.temp) ? "Sensors" : "",
+      !(session.ecg || session.hrv || session.sdnn || session.eda || session.temp || session.spo2 || session.scrPeak || session.scrMean) ? "Sensors" : "",
       !session.q ? "Questionnaire" : "",
     ].filter(Boolean).join(", ")
     return [`Missing ${missing || "data"}`, ORANGE]
@@ -2385,7 +2412,7 @@ function ResearcherSessionsScreen({ nav }: { nav: Nav }) {
     if (filter === "Relaxed")  return s.cond === "Relaxed"
     if (filter === "Stress")   return s.cond === "Stress"
     if (filter === "Complete") return s.q
-    if (filter === "Missing")  return !s.q || !s.eda
+    if (filter === "Missing")  return !s.q || !s.eda || !s.spo2
     return true
   })
   return (
@@ -2411,7 +2438,7 @@ function ResearcherSessionsScreen({ nav }: { nav: Nav }) {
         {filtered.map(s => {
           const isRelaxed = s.cond === "Relaxed"
           const color = isRelaxed ? GREEN : ORANGE
-          const dataFields: [string, boolean][] = [["ECG", s.ecg], ["HRV", s.hrv], ["EDA", s.eda], ["Temp", s.temp], ["Q", s.q]]
+          const dataFields: [string, boolean][] = [["TMP", s.temp], ["RMSSD", s.hrv], ["SDNN", s.sdnn], ["HR", s.ecg], ["SpO2", s.spo2], ["SCL", s.eda], ["SCR", s.scrPeak || s.scrMean], ["Q", s.q]]
           return (
             <Card key={s.id} className="p-4">
               <div className="flex items-start justify-between mb-2">
@@ -2455,12 +2482,14 @@ function ResearcherSessionsScreen({ nav }: { nav: Nav }) {
 function SensorQualityScreen({ nav }: { nav: Nav }) {
   const iconMap: Record<string, React.ComponentType<{ size: number; style?: React.CSSProperties }>> = {
     ECG: Activity,
-    "HRV (RMSSD)": TrendingUp,
-    EDA: Zap,
+    RMSSD: TrendingUp,
+    SDNN: TrendingUp,
     Temperature: Thermometer,
-    Respiration: Database,
-    Accelerometer: Activity,
-    Battery: Battery,
+    "Heart Rate": Heart,
+    SpO2: Shield,
+    SCL: Zap,
+    "SCR Peaks": Activity,
+    "SCR Mean": Database,
   }
   const [sensors, setSensors] = useState<Array<{ name: string; quality: string; score: number; icon: React.ComponentType<{ size: number; style?: React.CSSProperties }> }>>([])
   const [error, setError] = useState("")
@@ -2701,7 +2730,7 @@ function DataOverviewScreen({ nav }: { nav: Nav }) {
       .catch(err => setError(err instanceof Error ? err.message : "Could not load data overview"))
   }, [])
   const features = [
-    { icon: Activity,   label: "Physiological Signals", desc: "ECG, HR, HRV, EDA, Temp, Respiration",             color: RED    },
+    { icon: Activity,   label: "Physiological Signals", desc: "Mean Temp, RMSSD, SDNN, HR, SpO2, SCL, SCR",       color: RED    },
         { icon: FileText,   label: "Questionnaire",          desc: "Collect self-reported stress labels",               color: BLUE   },
     { icon: Stethoscope,label: "Doctor Assessment",      desc: "Clinical evaluation and stress labeling",           color: "#7C3AED" },
     { icon: Database,   label: "Secure Storage",         desc: "Encrypted MongoDB backend with audit logs",         color: GREEN  },
@@ -2743,11 +2772,13 @@ function DataOverviewScreen({ nav }: { nav: Nav }) {
                   <th className="text-left py-2 px-3 text-gray-400 font-semibold w-16">P-ID</th>
                   <th className="text-left py-2 px-1.5 text-gray-400 font-semibold w-10">Sess</th>
                   <th className="py-2 px-1 text-gray-400 font-semibold">Cond</th>
-                  <th className="py-2 px-1 text-gray-400 font-semibold">ECG</th>
-                  <th className="py-2 px-1 text-gray-400 font-semibold">HRV</th>
-                  <th className="py-2 px-1 text-gray-400 font-semibold">EDA</th>
                   <th className="py-2 px-1 text-gray-400 font-semibold">Tmp</th>
-                  <th className="py-2 px-1 text-gray-400 font-semibold">Aud</th>
+                  <th className="py-2 px-1 text-gray-400 font-semibold">RM</th>
+                  <th className="py-2 px-1 text-gray-400 font-semibold">SD</th>
+                  <th className="py-2 px-1 text-gray-400 font-semibold">HR</th>
+                  <th className="py-2 px-1 text-gray-400 font-semibold">O2</th>
+                  <th className="py-2 px-1 text-gray-400 font-semibold">SCL</th>
+                  <th className="py-2 px-1 text-gray-400 font-semibold">SCR</th>
                   <th className="py-2 px-1 text-gray-400 font-semibold">Q</th>
                   <th className="py-2 px-1 text-gray-400 font-semibold">Dr</th>
                 </tr>
@@ -2755,7 +2786,7 @@ function DataOverviewScreen({ nav }: { nav: Nav }) {
               <tbody>
                 {sessions.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="py-4 px-3 text-center text-gray-400">
+                    <td colSpan={12} className="py-4 px-3 text-center text-gray-400">
                       {error || "No MongoDB sessions available."}
                     </td>
                   </tr>
@@ -2767,10 +2798,13 @@ function DataOverviewScreen({ nav }: { nav: Nav }) {
                     <td className="py-2 px-1 text-center">
                       <span className="text-[10px] font-bold px-1 rounded" style={{ backgroundColor: s.cond === "Relaxed" ? "#DCFCE7" : "#FEE2E2", color: s.cond === "Relaxed" ? GREEN : RED }}>{s.cond === "Relaxed" ? "R" : "S"}</span>
                     </td>
-                    <td className="py-2 px-1 text-center"><DataBit ok={s.ecg}   /></td>
-                    <td className="py-2 px-1 text-center"><DataBit ok={s.hrv}   /></td>
-                    <td className="py-2 px-1 text-center"><DataBit ok={s.eda}   /></td>
                     <td className="py-2 px-1 text-center"><DataBit ok={s.temp}  /></td>
+                    <td className="py-2 px-1 text-center"><DataBit ok={s.hrv}   /></td>
+                    <td className="py-2 px-1 text-center"><DataBit ok={s.sdnn}  /></td>
+                    <td className="py-2 px-1 text-center"><DataBit ok={s.ecg}   /></td>
+                    <td className="py-2 px-1 text-center"><DataBit ok={s.spo2}  /></td>
+                    <td className="py-2 px-1 text-center"><DataBit ok={s.eda}   /></td>
+                    <td className="py-2 px-1 text-center"><DataBit ok={s.scrPeak || s.scrMean} /></td>
                     <td className="py-2 px-1 text-center"><DataBit ok={s.q}     /></td>
                     <td className="py-2 px-1 text-center"><DataBit ok={s.doctor === "Completed" ? true : null} /></td>
                   </tr>
@@ -2824,8 +2858,16 @@ const ALL_SCREENS: { id: Screen; label: string }[] = [
   { id: "data-overview",           label: "28. Data Overview"      },
 ]
 
+function screenFromPath(pathname: string): Screen | null {
+  const key = pathname.replace(/^\/+/, "").replace(/\/+$/, "")
+  if (!key) return null
+  return ALL_SCREENS.some(item => item.id === key) ? key as Screen : null
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>(() => {
+    const routeScreen = typeof window === "undefined" ? null : screenFromPath(window.location.pathname)
+    if (routeScreen) return routeScreen
     const saved = localStorage.getItem("stresssense_screen") as Screen | null
     if (saved && ALL_SCREENS.some(item => item.id === saved)) return saved
     return "splash"

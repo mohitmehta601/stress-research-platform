@@ -13,3 +13,22 @@ npm run sync:mongodb        Synchronize MongoDB collections and indexes.
 ```
 
 The API defaults to `http://127.0.0.1:8010/api`.
+
+## Database shape
+
+The participant app stores its active research data in two primary collections:
+
+- `participants`: account, role, consent, and embedded profile data.
+- `sessions`: session metadata plus embedded physiological, questionnaire, and doctor assessment data.
+
+After changing schemas or connecting a fresh database, run the Mongo validator/index script from the repository root:
+
+```text
+mongosh "$MONGODB_URI/stress_research_platform" database/schema.js
+```
+
+For demo data that matches the app screens:
+
+```text
+mongosh "$MONGODB_URI/stress_research_platform" database/seed.js
+```

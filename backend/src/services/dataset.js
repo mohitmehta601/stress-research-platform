@@ -61,10 +61,18 @@ export async function physiologicalRows() {
       ECG: item.ecg || "",
       HeartRate: item.heart_rate || "",
       HRV: item.hrv || "",
+      RMSSD_ms: item.rmssd_ms ?? item.hrv ?? "",
+      SDNN_ms: item.sdnn_ms ?? "",
+      SpO2_percent: item.spo2_percent ?? "",
       EDA: item.eda || "",
+      SCL_uS: item.scl_us ?? item.eda ?? "",
+      SCR_Peak_Count: item.scr_peak_count ?? "",
+      SCR_Mean: item.scr_mean ?? "",
       Temperature: item.temperature || "",
+      Mean_Temp: item.mean_temp ?? item.temperature ?? "",
       Respiration: item.respiration || "",
       SignalQuality: item.signal_quality || "",
+      ThingSpeakEntryID: item.thingspeak?.entry_id || "",
       RecordedAt: item.recorded_at || ""
     };
   });
@@ -132,7 +140,14 @@ export async function finalDatasetRows() {
       Gender: profile.gender || "",
       SessionID: session.session_code || String(session._id),
       HeartRate: signals.heart_rate || "",
+      RMSSD_ms: signals.rmssd_ms ?? signals.hrv ?? "",
+      SDNN_ms: signals.sdnn_ms ?? "",
+      SpO2_percent: signals.spo2_percent ?? "",
+      SCL_uS: signals.scl_us ?? signals.eda ?? "",
+      SCR_Peak_Count: signals.scr_peak_count ?? "",
+      SCR_Mean: signals.scr_mean ?? "",
       Temperature: signals.temperature || "",
+      Mean_Temp: signals.mean_temp ?? signals.temperature ?? "",
       Respiration: signals.respiration || "",
       QuestionnaireScore: questionnaire.score || "",
       QuestionnaireAnswers: questionnaire.answers || {},
@@ -148,11 +163,11 @@ export const EXPORTS = {
   "participant_profile.csv": [participantRows, ["ParticipantID", "Name", "Email", "Age", "Gender", "HeightCm", "WeightKg", "BMI", "Education", "Occupation"]],
   "session.csv": [sessionRows, ["SessionID", "SessionObjectID", "ParticipantID", "ParticipantObjectID", "Condition", "Task", "Status", "SignalQuality", "StartedAt", "CompletedAt", "DurationSeconds"]],
   "research_sessions.csv": [sessionRows, ["SessionID", "SessionObjectID", "ParticipantID", "Condition", "Task", "Status", "StartedAt", "CompletedAt", "DurationSeconds"]],
-  "physiological.csv": [physiologicalRows, ["ParticipantID", "SessionID", "Condition", "ECG", "HeartRate", "HRV", "EDA", "Temperature", "Respiration", "SignalQuality", "RecordedAt"]],
+  "physiological.csv": [physiologicalRows, ["ParticipantID", "SessionID", "Condition", "ECG", "Mean_Temp", "RMSSD_ms", "SDNN_ms", "HeartRate", "SpO2_percent", "SCL_uS", "SCR_Peak_Count", "SCR_Mean", "EDA", "Temperature", "Respiration", "SignalQuality", "ThingSpeakEntryID", "RecordedAt"]],
   "questionnaire.csv": [questionnaireRows, ["ParticipantID", "SessionID", "Condition", "QuestionnaireKey", "Score", "SubmittedAt", "Answers"]],
   "doctor.csv": [doctorRows, ["id", "session_id", "participant_id", "clinical_stress", "comments", "recommendation", "created_at", "updated_at"]],
   "doctor_assessment.csv": [doctorRows, ["id", "session_id", "participant_id", "clinical_stress", "comments", "recommendation", "created_at", "updated_at"]],
-  "final_dataset.csv": [finalDatasetRows, ["Participant", "Session", "Condition", "ECG", "HRV", "EDA", "Temp", "Questionnaire", "Doctor Label", "ParticipantID", "ParticipantName", "ParticipantEmail", "Age", "Gender", "SessionID", "HeartRate", "Temperature", "Respiration", "QuestionnaireScore", "QuestionnaireAnswers", "DoctorLabel", "DoctorComments", "DoctorRecommendation"]]
+  "final_dataset.csv": [finalDatasetRows, ["Participant", "Session", "Condition", "ECG", "HRV", "EDA", "Temp", "Questionnaire", "Doctor Label", "ParticipantID", "ParticipantName", "ParticipantEmail", "Age", "Gender", "SessionID", "HeartRate", "Mean_Temp", "RMSSD_ms", "SDNN_ms", "SpO2_percent", "SCL_uS", "SCR_Peak_Count", "SCR_Mean", "Temperature", "Respiration", "QuestionnaireScore", "QuestionnaireAnswers", "DoctorLabel", "DoctorComments", "DoctorRecommendation"]]
 };
 
 export async function exportCsv(filename, condition) {

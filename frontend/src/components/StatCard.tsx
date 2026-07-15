@@ -18,7 +18,7 @@ export function StatCard({ label, value, sub, icon: Icon, iconColor = "text-blue
       "bg-card rounded border border-border p-4 flex flex-col gap-2 shadow-sm hover:shadow-md transition-shadow",
       highlight && "border-l-4 border-l-[#0d9488]",
       className
-    )}>
+    )}>              
       <div className="flex items-start justify-between">
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-widest">{label}</span>
         {Icon && (

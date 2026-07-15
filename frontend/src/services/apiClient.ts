@@ -1,6 +1,6 @@
 import type {
   Participant, Session, PhysioRecord,
-  QuestionnaireRecord, DoctorAssessment, DashboardSummary, AuthUser, AccessRequest, DashboardNotification
+  QuestionnaireRecord, DoctorAssessment, DashboardSummary, AuthUser, AccessRequest, DashboardNotification, SensorSnapshot
 } from "../types";
 
 function normalizeApiBase(url?: string): string {
@@ -87,6 +87,10 @@ type BackendSummary = {
     hrv?: number;
     temperature?: number;
     eda?: number;
+    sdnn_ms?: number;
+    spo2_percent?: number;
+    scr_peak_count?: number;
+    scr_mean?: number;
     stress_score?: number;
   };
 };
@@ -115,6 +119,14 @@ type BackendSession = {
     eda?: number | null;
     temperature?: number | null;
     respiration?: number | null;
+    mean_temp?: number | null;
+    rmssd_ms?: number | null;
+    sdnn_ms?: number | null;
+    heart_rate_bpm?: number | null;
+    spo2_percent?: number | null;
+    scl_us?: number | null;
+    scr_peak_count?: number | null;
+    scr_mean?: number | null;
   } | null;
   stress_score?: number | null;
   doctor_label?: string | null;
@@ -153,6 +165,14 @@ type BackendPhysio = {
   eda?: number | null;
   temperature?: number | null;
   respiration?: number | null;
+  mean_temp?: number | null;
+  rmssd_ms?: number | null;
+  sdnn_ms?: number | null;
+  heart_rate_bpm?: number | null;
+  spo2_percent?: number | null;
+  scl_us?: number | null;
+  scr_peak_count?: number | null;
+  scr_mean?: number | null;
   accelerometer?: boolean;
   battery?: number | null;
   sampling_rate?: number | null;
@@ -368,7 +388,24 @@ function toSummary(item: BackendSummary): DashboardSummary {
     avgHrv: averages.hrv ?? 0,
     avgTemperature: averages.temperature ?? 0,
     avgEda: averages.eda ?? 0,
+    avgSdnn: averages.sdnn_ms ?? 0,
+    avgSpo2: averages.spo2_percent ?? 0,
+    avgScrPeakCount: averages.scr_peak_count ?? 0,
+    avgScrMean: averages.scr_mean ?? 0,
     avgStressScore: averages.stress_score ?? 0,
+  };
+}
+
+function toSensorSnapshot(item: BackendPhysio): SensorSnapshot {
+  return {
+    meanTemp: item.mean_temp ?? item.temperature ?? null,
+    rmssdMs: item.rmssd_ms ?? item.hrv ?? null,
+    sdnnMs: item.sdnn_ms ?? null,
+    heartRateBpm: item.heart_rate_bpm ?? item.heart_rate ?? null,
+    spo2Percent: item.spo2_percent ?? null,
+    sclUs: item.scl_us ?? item.eda ?? null,
+    scrPeakCount: item.scr_peak_count ?? null,
+    scrMean: item.scr_mean ?? null,
   };
 }
 
@@ -389,6 +426,12 @@ function toSession(item: BackendSession): Session {
     temp: item.physiological?.temperature ?? null,
     respiration: item.physiological?.respiration ?? null,
     avgHeartRate: item.physiological?.heart_rate ?? null,
+    rmssdMs: item.physiological?.rmssd_ms ?? item.physiological?.hrv ?? null,
+    sdnnMs: item.physiological?.sdnn_ms ?? null,
+    spo2Percent: item.physiological?.spo2_percent ?? null,
+    sclUs: item.physiological?.scl_us ?? item.physiological?.eda ?? null,
+    scrPeakCount: item.physiological?.scr_peak_count ?? null,
+    scrMean: item.physiological?.scr_mean ?? null,
     questionnaireCompleted: Boolean(item.collected?.questionnaire),
     doctorAssessmentStatus: item.collected?.doctor_assessment ? "completed" : "pending",
     signalQuality: normalizeQuality(item.signal_quality),
@@ -409,6 +452,14 @@ function toPhysio(item: BackendPhysio): PhysioRecord {
     eda: item.eda ?? null,
     temperature: item.temperature ?? null,
     respiration: item.respiration ?? null,
+    meanTemp: item.mean_temp ?? item.temperature ?? null,
+    rmssdMs: item.rmssd_ms ?? item.hrv ?? null,
+    sdnnMs: item.sdnn_ms ?? null,
+    heartRateBpm: item.heart_rate_bpm ?? item.heart_rate ?? null,
+    spo2Percent: item.spo2_percent ?? null,
+    sclUs: item.scl_us ?? item.eda ?? null,
+    scrPeakCount: item.scr_peak_count ?? null,
+    scrMean: item.scr_mean ?? null,
     accelerometer: Boolean(item.accelerometer),
     battery: item.battery ?? null,
     samplingRate: item.sampling_rate ?? null,
@@ -628,6 +679,14 @@ export async function getCurrentUser(): Promise<AuthUser> {
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {
   return toSummary(await apiFetch<BackendSummary>("/dashboard/summary"));
+}
+
+export async function getLatestThingSpeakReading(): Promise<SensorSnapshot | null> {
+  try {
+    return toSensorSnapshot(await apiFetch<BackendPhysio>("/dashboard/thingspeak/latest"));
+  } catch {
+    return null;
+  }
 }
 
 export async function getParticipants(): Promise<Participant[]> {

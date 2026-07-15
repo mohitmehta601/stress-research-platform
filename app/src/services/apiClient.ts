@@ -1,4 +1,9 @@
-const API_BASE = import.meta.env?.VITE_API_URL || "http://127.0.0.1:8010/api";
+function normalizeApiBase(url?: string): string {
+  const baseUrl = (url || "http://127.0.0.1:8010/api").replace(/\/$/, "");
+  return baseUrl.endsWith("/api") ? baseUrl : `${baseUrl}/api`;
+}
+
+const API_BASE = normalizeApiBase(import.meta.env?.VITE_API_URL);
 const TOKEN_KEY = "stresssense_token";
 const REFRESH_TOKEN_KEY = "stresssense_refresh_token";
 const SESSION_KEY = "stresssense_session_id";
@@ -30,6 +35,16 @@ export type PendingOtpLogin = {
   email: string;
   expires_in_seconds: number;
   message: string;
+};
+
+export type OtpRequestResponse = {
+  success?: boolean;
+  message: string;
+  email?: string;
+  expires_in_minutes?: number;
+  expires_in_seconds?: number;
+  dev_otp?: string;
+  otp_code?: string;
 };
 
 export type ParticipantProfilePayload = {
@@ -75,8 +90,12 @@ export type MobileSession = {
   date: string;
   ecg: boolean;
   hrv: boolean;
+  sdnn: boolean;
   eda: boolean;
   temp: boolean;
+  spo2: boolean;
+  scrPeak: boolean;
+  scrMean: boolean;
   q: boolean;
   doctor: "Completed" | "Pending";
   quality: "Good" | "Moderate" | "Poor" | "Missing";
@@ -229,11 +248,18 @@ export const api = {
   isSignedIn() {
     return Boolean(token());
   },
-  async register(name: string, email: string, password: string) {
-    return request<PendingOtpLogin>("/auth/register", {
+  async requestRegistrationOtp(name: string, email: string) {
+    return request<OtpRequestResponse>("/participant/request-otp", {
       method: "POST",
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ name, email }),
     });
+  },
+  async register(name: string, email: string, password: string, otpCode: string) {
+    const data = await request<LoginResponse>("/participant/register", {
+      method: "POST",
+      body: JSON.stringify({ name, email, password, otp_code: otpCode }),
+    });
+    return saveAuth(data);
   },
   async verifyRegistrationOtp(otpToken: string, otpCode: string) {
     const data = await request<LoginResponse>("/auth/verify-registration-otp", {
@@ -302,18 +328,7 @@ export const api = {
   savePhysiological(condition: "relaxed" | "stress") {
     const sessionId = api.activeSessionId;
     if (!sessionId) return Promise.resolve();
-    return request(`/sessions/${sessionId}/physiological`, {
-      method: "POST",
-      body: JSON.stringify({
-        ecg: [0.12, 0.18, 0.09, 0.21],
-        heart_rate: condition === "stress" ? 96 : 72,
-        hrv: condition === "stress" ? 30 : 48,
-        eda: condition === "stress" ? 4.7 : 2.2,
-        temperature: 36.6,
-        sampling_rate: 250,
-        signal_quality: condition === "stress" ? "moderate" : "good",
-      }),
-    });
+    return request(`/sessions/${sessionId}/thingspeak-sync`, { method: "POST" });
   },
   saveQuestionnaire(score: number, answers: Record<string, unknown>) {
     const sessionId = api.activeSessionId;
@@ -391,7 +406,17 @@ export const api = {
         started_at?: string | null;
         signal_quality?: string | null;
         collected?: { physiological?: boolean; questionnaire?: boolean; doctor_assessment?: boolean };
-        physiological?: { hrv?: number | null; eda?: number | null; temperature?: number | null };
+        physiological?: {
+          hrv?: number | null;
+          eda?: number | null;
+          temperature?: number | null;
+          rmssd_ms?: number | null;
+          sdnn_ms?: number | null;
+          spo2_percent?: number | null;
+          scl_us?: number | null;
+          scr_peak_count?: number | null;
+          scr_mean?: number | null;
+        };
       }>>("/dashboard/sessions"),
     ]);
 
@@ -419,8 +444,12 @@ export const api = {
       date: dateText(session.started_at),
       ecg: Boolean(session.collected?.physiological),
       hrv: session.physiological?.hrv !== null && session.physiological?.hrv !== undefined,
+      sdnn: session.physiological?.sdnn_ms !== null && session.physiological?.sdnn_ms !== undefined,
       eda: session.physiological?.eda !== null && session.physiological?.eda !== undefined,
       temp: session.physiological?.temperature !== null && session.physiological?.temperature !== undefined,
+      spo2: session.physiological?.spo2_percent !== null && session.physiological?.spo2_percent !== undefined,
+      scrPeak: session.physiological?.scr_peak_count !== null && session.physiological?.scr_peak_count !== undefined,
+      scrMean: session.physiological?.scr_mean !== null && session.physiological?.scr_mean !== undefined,
       q: Boolean(session.collected?.questionnaire),
       doctor: session.collected?.doctor_assessment ? "Completed" : "Pending",
       quality: qualityText(session.signal_quality),
@@ -452,6 +481,12 @@ export const api = {
       eda?: number | null;
       temperature?: number | null;
       respiration?: number | null;
+      rmssd_ms?: number | null;
+      sdnn_ms?: number | null;
+      spo2_percent?: number | null;
+      scl_us?: number | null;
+      scr_peak_count?: number | null;
+      scr_mean?: number | null;
       accelerometer?: boolean;
       battery?: number | null;
       signal_quality?: "good" | "moderate" | "poor" | null;
@@ -462,12 +497,14 @@ export const api = {
     const baseScore = quality === "Good" ? 92 : quality === "Moderate" ? 72 : quality === "Poor" ? 45 : 0;
     return [
       { name: "ECG", quality, score: baseScore },
-      { name: "HRV (RMSSD)", quality: latest.hrv != null ? quality : "Missing", score: latest.hrv != null ? baseScore : 0 },
-      { name: "EDA", quality: latest.eda != null ? quality : "Missing", score: latest.eda != null ? baseScore : 0 },
+      { name: "RMSSD", quality: (latest.rmssd_ms ?? latest.hrv) != null ? quality : "Missing", score: (latest.rmssd_ms ?? latest.hrv) != null ? baseScore : 0 },
+      { name: "SDNN", quality: latest.sdnn_ms != null ? quality : "Missing", score: latest.sdnn_ms != null ? baseScore : 0 },
       { name: "Temperature", quality: latest.temperature != null ? "Good" : "Missing", score: latest.temperature != null ? 95 : 0 },
-      { name: "Respiration", quality: latest.respiration != null ? quality : "Missing", score: latest.respiration != null ? baseScore : 0 },
-      { name: "Accelerometer", quality: latest.accelerometer ? "Good" : "Missing", score: latest.accelerometer ? 90 : 0 },
-      { name: "Battery", quality: latest.battery != null ? "Good" : "Missing", score: latest.battery ?? 0 },
+      { name: "Heart Rate", quality: latest.heart_rate != null ? quality : "Missing", score: latest.heart_rate != null ? baseScore : 0 },
+      { name: "SpO2", quality: latest.spo2_percent != null ? "Good" : "Missing", score: latest.spo2_percent != null ? Math.min(100, Math.max(0, latest.spo2_percent)) : 0 },
+      { name: "SCL", quality: (latest.scl_us ?? latest.eda) != null ? quality : "Missing", score: (latest.scl_us ?? latest.eda) != null ? baseScore : 0 },
+      { name: "SCR Peaks", quality: latest.scr_peak_count != null ? quality : "Missing", score: latest.scr_peak_count != null ? baseScore : 0 },
+      { name: "SCR Mean", quality: latest.scr_mean != null ? quality : "Missing", score: latest.scr_mean != null ? baseScore : 0 },
     ];
   },
   async getMySessions(): Promise<MobileSession[]> {
@@ -478,7 +515,7 @@ export const api = {
       started_at?: string | null;
       signal_quality?: string | null;
       collected?: { physiological?: boolean; questionnaire?: boolean; doctor_assessment?: boolean };
-      physiological?: { hrv?: number | null; eda?: number | null; temperature?: number | null };
+      physiological?: { hrv?: number | null; eda?: number | null; temperature?: number | null; sdnn_ms?: number | null; spo2_percent?: number | null; scr_peak_count?: number | null; scr_mean?: number | null };
     }>>("/sessions/me");
     return sessions.map((session) => ({
       rawId: session.id,
@@ -489,8 +526,12 @@ export const api = {
       date: dateText(session.started_at),
       ecg: Boolean(session.collected?.physiological),
       hrv: session.physiological?.hrv !== null && session.physiological?.hrv !== undefined,
+      sdnn: session.physiological?.sdnn_ms !== null && session.physiological?.sdnn_ms !== undefined,
       eda: session.physiological?.eda !== null && session.physiological?.eda !== undefined,
       temp: session.physiological?.temperature !== null && session.physiological?.temperature !== undefined,
+      spo2: session.physiological?.spo2_percent !== null && session.physiological?.spo2_percent !== undefined,
+      scrPeak: session.physiological?.scr_peak_count !== null && session.physiological?.scr_peak_count !== undefined,
+      scrMean: session.physiological?.scr_mean !== null && session.physiological?.scr_mean !== undefined,
       q: Boolean(session.collected?.questionnaire),
       doctor: session.collected?.doctor_assessment ? "Completed" : "Pending",
       quality: qualityText(session.signal_quality),

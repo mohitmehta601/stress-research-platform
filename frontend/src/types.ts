@@ -42,6 +42,12 @@ export interface Session {
   eda: number | null;
   temp: number | null;
   avgHeartRate: number | null;
+  rmssdMs?: number | null;
+  sdnnMs?: number | null;
+  spo2Percent?: number | null;
+  sclUs?: number | null;
+  scrPeakCount?: number | null;
+  scrMean?: number | null;
   questionnaireCompleted: boolean;
   doctorAssessmentStatus: "completed" | "pending" | "not-required";
   signalQuality: "good" | "moderate" | "poor" | null;
@@ -61,6 +67,14 @@ export interface PhysioRecord {
   eda: number | null;
   temperature: number | null;
   respiration: number | null;
+  meanTemp: number | null;
+  rmssdMs: number | null;
+  sdnnMs: number | null;
+  heartRateBpm: number | null;
+  spo2Percent: number | null;
+  sclUs: number | null;
+  scrPeakCount: number | null;
+  scrMean: number | null;
   accelerometer: boolean;
   battery: number | null;
   samplingRate: number | null;
@@ -118,7 +132,22 @@ export interface DashboardSummary {
   avgHrv: number;
   avgTemperature: number;
   avgEda: number;
+  avgSdnn: number;
+  avgSpo2: number;
+  avgScrPeakCount: number;
+  avgScrMean: number;
   avgStressScore: number;
+}
+
+export interface SensorSnapshot {
+  meanTemp: number | null;
+  rmssdMs: number | null;
+  sdnnMs: number | null;
+  heartRateBpm: number | null;
+  spo2Percent: number | null;
+  sclUs: number | null;
+  scrPeakCount: number | null;
+  scrMean: number | null;
 }
 
 export interface AuthUser {

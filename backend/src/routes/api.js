@@ -26,6 +26,11 @@ import {
 import { sendEmail } from "../services/email.js";
 import { exportCsv, EXPORTS } from "../services/dataset.js";
 import {
+  fetchLatestThingSpeakReading,
+  normalizePhysiologicalPayload,
+  THINGSPEAK_FIELD_DEFS
+} from "../services/thingspeak.js";
+import {
   generateOtpCode,
   generateToken,
   hashPassword,
@@ -112,6 +117,42 @@ async function createOtpChallenge({ email, name, purpose, payload = null, partic
   };
 }
 
+async function createEmailOtpChallenge({ email, name, purpose }) {
+  const code = generateOtpCode();
+  const now = new Date();
+  await PasswordResetToken.create({
+    purpose,
+    token_hash: hashSecret(generateToken()),
+    otp_hash: hashSecret(code),
+    used: false,
+    payload: { email },
+    created_at: now,
+    expires_at: new Date(now.getTime() + loginOtpTtlMinutes * 60 * 1000)
+  });
+  let emailResult;
+  try {
+    emailResult = await sendEmail({
+      toEmail: email,
+      toName: name,
+      subject: "Verification code",
+      text: `Your Stress Research Platform verification code is ${code}. It expires in ${loginOtpTtlMinutes} minutes.`,
+      html: `<p>Your Stress Research Platform verification code is <strong>${code}</strong>.</p><p>This code expires in ${loginOtpTtlMinutes} minutes.</p>`
+    });
+  } catch (error) {
+    if (settings.appEnv === "production") throw error;
+    console.warn("OTP email delivery failed; returning development OTP instead.", error.message);
+    emailResult = { status: "skipped" };
+  }
+  return {
+    success: true,
+    message: "OTP sent",
+    email,
+    expires_in_minutes: loginOtpTtlMinutes,
+    expires_in_seconds: loginOtpTtlMinutes * 60,
+    ...(settings.appEnv !== "production" && emailResult?.status === "skipped" ? { dev_otp: code, otp_code: code } : {})
+  };
+}
+
 async function findValidOtp(purpose, otpToken, otpCode) {
   const record = await PasswordResetToken.findOne({
     purpose,
@@ -121,6 +162,19 @@ async function findValidOtp(purpose, otpToken, otpCode) {
   }).lean();
   if (!record || record.otp_hash !== hashSecret(otpCode)) {
     throw makeError(400, "Invalid or expired verification code");
+  }
+  return record;
+}
+
+async function findValidEmailOtp(purpose, email, otpCode) {
+  const record = await PasswordResetToken.findOne({
+    purpose,
+    "payload.email": normalizeEmail(email),
+    used: false,
+    expires_at: { $gt: new Date() }
+  }).sort({ created_at: -1 }).lean();
+  if (!record || record.otp_hash !== hashSecret(otpCode)) {
+    throw makeError(400, "Invalid or expired OTP");
   }
   return record;
 }
@@ -179,6 +233,33 @@ function publicParticipantRow(person, sessions = 0, completed = 0, latest = null
   };
 }
 
+function publicPhysiological(item = null) {
+  if (!item) return null;
+  return {
+    heart_rate: item.heart_rate,
+    hrv: item.hrv,
+    eda: item.eda,
+    temperature: item.temperature,
+    respiration: item.respiration,
+    mean_temp: item.mean_temp ?? item.temperature,
+    rmssd_ms: item.rmssd_ms ?? item.hrv,
+    sdnn_ms: item.sdnn_ms,
+    heart_rate_bpm: item.heart_rate_bpm ?? item.heart_rate,
+    spo2_percent: item.spo2_percent,
+    scl_us: item.scl_us ?? item.eda,
+    scr_peak_count: item.scr_peak_count,
+    scr_mean: item.scr_mean,
+    sensor_fields: item.sensor_fields || THINGSPEAK_FIELD_DEFS.map((def) => ({
+      name: def.name,
+      key: def.key,
+      field: def.field,
+      value: item[def.key] ?? (def.alias ? item[def.alias] : null) ?? null,
+      unit: def.unit
+    })),
+    thingspeak: item.thingspeak || null
+  };
+}
+
 async function resolveParticipant(participantId) {
   const participant = await Participant.findOne({ ...objectIdOrCode(participantId), ...participantFilter }).lean();
   if (!participant) throw makeError(404, "Participant not found");
@@ -198,13 +279,7 @@ async function publicSessionRow(item) {
     participant_object_id: String(item.participant_id || ""),
     participant_code: person?.participant_code || "Unknown",
     participant_name: person?.name || "Unknown participant",
-    physiological: physiological ? {
-      heart_rate: physiological.heart_rate,
-      hrv: physiological.hrv,
-      eda: physiological.eda,
-      temperature: physiological.temperature,
-      respiration: physiological.respiration
-    } : null,
+    physiological: publicPhysiological(physiological),
     signal_quality: physiological?.signal_quality || item.signal_quality || "pending",
     collected: {
       physiological: Boolean(physiological),
@@ -234,16 +309,28 @@ async function syncManualSessionChildren(session, payload) {
   const now = new Date();
   const set = { updated_at: now };
   const unset = {};
-  if (payload.ecg_collected || [payload.heart_rate, payload.hrv, payload.eda, payload.temperature, payload.respiration].some((value) => value !== null && value !== undefined)) {
-    set.physiological = {
-      condition: payload.condition,
-      ecg: payload.ecg_collected ? [] : null,
+  if (payload.ecg_collected || [payload.heart_rate, payload.hrv, payload.eda, payload.temperature, payload.respiration, payload.sdnn_ms, payload.spo2_percent, payload.scr_peak_count, payload.scr_mean].some((value) => value !== null && value !== undefined)) {
+    const physiological = normalizePhysiologicalPayload({
       heart_rate: payload.heart_rate ?? null,
       hrv: payload.hrv ?? null,
       eda: payload.eda ?? null,
       temperature: payload.temperature ?? null,
       respiration: payload.respiration ?? null,
-      signal_quality: payload.signal_quality || "good",
+      mean_temp: payload.mean_temp ?? payload.temperature ?? null,
+      rmssd_ms: payload.rmssd_ms ?? payload.hrv ?? null,
+      sdnn_ms: payload.sdnn_ms ?? null,
+      heart_rate_bpm: payload.heart_rate_bpm ?? payload.heart_rate ?? null,
+      spo2_percent: payload.spo2_percent ?? null,
+      scl_us: payload.scl_us ?? payload.eda ?? null,
+      scr_peak_count: payload.scr_peak_count ?? null,
+      scr_mean: payload.scr_mean ?? null,
+      signal_quality: payload.signal_quality || "good"
+    });
+    set.physiological = {
+      ...physiological,
+      condition: payload.condition,
+      ecg: payload.ecg_collected ? [] : null,
+      respiration: payload.respiration ?? null,
       recorded_at: payload.started_at ? new Date(payload.started_at) : now,
       updated_at: now
     };
@@ -278,6 +365,58 @@ async function syncManualSessionChildren(session, payload) {
 }
 
 router.get("/", (_req, res) => res.json({ status: "ok", database: "mongodb" }));
+
+router.post("/participant/request-otp", asyncHandler(async (req, res) => {
+  requireFields(req.body, ["email"]);
+  const email = normalizeEmail(req.body.email);
+  const existing = await Participant.findOne({ email }).lean();
+  if (existing && existing.email_verified !== false) {
+    throw makeError(409, "An account with this email already exists. Please log in.");
+  }
+  res.json(await createEmailOtpChallenge({
+    email,
+    name: req.body.name || "Participant",
+    purpose: "participant_signup"
+  }));
+}));
+
+router.post("/participant/register", asyncHandler(async (req, res) => {
+  requireFields(req.body, ["email", "password", "otp_code"]);
+  const email = normalizeEmail(req.body.email);
+  const existing = await Participant.findOne({ email }).lean();
+  if (existing && existing.email_verified !== false) {
+    throw makeError(409, "An account with this email already exists. Please log in.");
+  }
+  const record = await findValidEmailOtp("participant_signup", email, req.body.otp_code || req.body.otpCode);
+  const now = new Date();
+  const document = {
+    email,
+    name: String(req.body.name || email.split("@")[0] || "Participant").trim(),
+    participant_code: existing?.participant_code || await generateParticipantCode("P"),
+    password_hash: await hashPassword(req.body.password),
+    is_active: true,
+    role: "participant",
+    email_verified: true,
+    email_verified_at: now,
+    approval_status: "approved",
+    consent_completed: false,
+    profile_completed: false,
+    created_at: existing?.created_at || now,
+    updated_at: now
+  };
+
+  let participant;
+  if (existing) {
+    await Participant.updateOne({ _id: existing._id }, { $set: document });
+    participant = await Participant.findById(existing._id).lean();
+  } else {
+    participant = await Participant.create(document);
+  }
+  await PasswordResetToken.updateOne({ _id: record._id }, { $set: { used: true, used_at: now } });
+  const payload = tokenPayload(participant);
+  setAuthCookie(res, payload);
+  res.status(201).json(payload);
+}));
 
 router.post("/auth/register", asyncHandler(async (req, res) => {
   requireFields(req.body, ["email", "name", "password"]);
@@ -490,11 +629,7 @@ router.get("/sessions/me", requireParticipant, asyncHandler(async (req, res) => 
       questionnaire: Boolean(item.questionnaire),
       doctor_assessment: Boolean(item.doctor_assessment)
     },
-    physiological: item.physiological ? {
-      hrv: item.physiological.hrv,
-      eda: item.physiological.eda,
-      temperature: item.physiological.temperature
-    } : null
+    physiological: publicPhysiological(item.physiological)
   })));
 }));
 
@@ -503,15 +638,44 @@ router.post("/sessions/:sessionId/physiological", requireParticipant, asyncHandl
   const session = await ResearchSession.findOne({ _id: req.params.sessionId, participant_id: req.participant._id }).lean();
   if (!session) throw makeError(404, "Session not found");
   const now = new Date();
+  const physiological = normalizePhysiologicalPayload({
+    ...req.body,
+    condition: session.condition,
+    recorded_at: now,
+    updated_at: now
+  });
   await ResearchSession.updateOne({ _id: session._id }, {
     $set: {
-      physiological: { ...req.body, recorded_at: now, updated_at: now },
-      signal_quality: req.body.signal_quality || "good",
+      physiological,
+      signal_quality: physiological.signal_quality || "good",
       updated_at: now
     }
   });
   await createNotification("physiological_data_uploaded", "Physiological data uploaded", `Sensor readings saved for ${session.session_code || req.params.sessionId}.`, session._id);
-  res.status(201).json({ status: "saved", session_id: req.params.sessionId });
+  res.status(201).json({ status: "saved", session_id: req.params.sessionId, physiological: publicPhysiological(physiological) });
+}));
+
+router.post("/sessions/:sessionId/thingspeak-sync", requireParticipant, asyncHandler(async (req, res) => {
+  if (!Types.ObjectId.isValid(req.params.sessionId)) throw makeError(400, "Invalid session ID");
+  const session = await ResearchSession.findOne({ _id: req.params.sessionId, participant_id: req.participant._id }).lean();
+  if (!session) throw makeError(404, "Session not found");
+  const now = new Date();
+  const latest = await fetchLatestThingSpeakReading();
+  const physiological = {
+    ...latest,
+    condition: session.condition,
+    recorded_at: latest.recorded_at ? new Date(latest.recorded_at) : now,
+    updated_at: now
+  };
+  await ResearchSession.updateOne({ _id: session._id }, {
+    $set: {
+      physiological,
+      signal_quality: physiological.signal_quality || "good",
+      updated_at: now
+    }
+  });
+  await createNotification("thingspeak_data_synced", "ThingSpeak sensor data synced", `Latest ThingSpeak reading saved for ${session.session_code || req.params.sessionId}.`, session._id);
+  res.status(201).json({ status: "synced", session_id: req.params.sessionId, physiological: publicPhysiological(physiological) });
 }));
 
 router.post("/sessions/:sessionId/complete", requireParticipant, asyncHandler(async (req, res) => {
@@ -619,6 +783,10 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res) => {
       hrv: average(physiological, "hrv"),
       temperature: average(physiological, "temperature"),
       eda: average(physiological, "eda"),
+      sdnn_ms: average(physiological, "sdnn_ms"),
+      spo2_percent: average(physiological, "spo2_percent"),
+      scr_peak_count: average(physiological, "scr_peak_count"),
+      scr_mean: average(physiological, "scr_mean"),
       stress_score: average(questionnaires, "score")
     },
     recent_sessions: recent.map((item) => ({
@@ -780,6 +948,34 @@ router.get("/dashboard/sessions/:sessionId", asyncHandler(async (req, res) => {
   });
 }));
 
+router.get("/dashboard/thingspeak/latest", asyncHandler(async (_req, res) => {
+  const latest = await fetchLatestThingSpeakReading();
+  res.json(publicPhysiological(latest));
+}));
+
+router.post("/dashboard/sessions/:sessionId/thingspeak-sync", asyncHandler(async (req, res) => {
+  if (!Types.ObjectId.isValid(req.params.sessionId)) throw makeError(400, "Invalid session ID");
+  const session = await ResearchSession.findById(req.params.sessionId).lean();
+  if (!session) throw makeError(404, "Session not found");
+  const now = new Date();
+  const latest = await fetchLatestThingSpeakReading();
+  const physiological = {
+    ...latest,
+    condition: session.condition,
+    recorded_at: latest.recorded_at ? new Date(latest.recorded_at) : now,
+    updated_at: now
+  };
+  await ResearchSession.updateOne({ _id: session._id }, {
+    $set: {
+      physiological,
+      signal_quality: physiological.signal_quality || "good",
+      updated_at: now
+    }
+  });
+  await createNotification("thingspeak_data_synced", "ThingSpeak sensor data synced", `Latest ThingSpeak reading saved for ${session.session_code || req.params.sessionId}.`, session._id);
+  res.status(201).json(await publicSessionRow(await ResearchSession.findById(session._id).lean()));
+}));
+
 router.get("/dashboard/exports/:filename", asyncHandler(async (req, res) => {
   if (!EXPORTS[req.params.filename]) throw makeError(404, "Unknown export dataset");
   const content = await exportCsv(req.params.filename, req.query.condition);
@@ -814,6 +1010,16 @@ router.get("/dashboard/physiological", asyncHandler(async (req, res) => {
       eda: item.eda,
       temperature: item.temperature,
       respiration: item.respiration,
+      mean_temp: item.mean_temp ?? item.temperature,
+      rmssd_ms: item.rmssd_ms ?? item.hrv,
+      sdnn_ms: item.sdnn_ms,
+      heart_rate_bpm: item.heart_rate_bpm ?? item.heart_rate,
+      spo2_percent: item.spo2_percent,
+      scl_us: item.scl_us ?? item.eda,
+      scr_peak_count: item.scr_peak_count,
+      scr_mean: item.scr_mean,
+      sensor_fields: item.sensor_fields || [],
+      thingspeak: item.thingspeak || null,
       accelerometer: Boolean(item.accelerometer || item.acc),
       battery: item.battery,
       sampling_rate: item.sampling_rate,
