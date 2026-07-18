@@ -364,6 +364,7 @@ function RegisterScreen({ nav }: { nav: Nav }) {
   const [devOtp, setDevOtp] = useState("")
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null)
   const [now, setNow] = useState(Date.now())
+  const normalizedEmail = email.trim().toLowerCase()
   const otpSecondsLeft = useMemo(() => {
     if (!otpExpiresAt) return 0
     return Math.max(0, Math.ceil((otpExpiresAt - now) / 1000))
@@ -388,12 +389,16 @@ function RegisterScreen({ nav }: { nav: Nav }) {
         nav("staff-login")
         return
       }
-      const result = await api.requestRegistrationOtp(name.trim(), email.trim().toLowerCase())
+      const result = await api.requestRegistrationOtp(name.trim(), normalizedEmail)
+      const expiresAt = result.expires_at
+        ? new Date(result.expires_at).getTime()
+        : Date.now() + (result.expires_in_seconds ? result.expires_in_seconds * 1000 : Number(result.expires_in_minutes || 10) * 60 * 1000)
       setOtpRequested(true)
-      setOtpEmail(result.email || email.trim().toLowerCase())
+      setOtpEmail(result.email || normalizedEmail)
       setOtpCode("")
       setDevOtp(result.dev_otp || result.otp_code || "")
-      setOtpExpiresAt(Date.now() + (result.expires_in_seconds ? result.expires_in_seconds * 1000 : Number(result.expires_in_minutes || 10) * 60 * 1000))
+      setOtpExpiresAt(Number.isNaN(expiresAt) ? null : expiresAt)
+      setNow(Date.now())
       setMessage(result.message || "OTP sent to your email.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed")
@@ -409,7 +414,7 @@ function RegisterScreen({ nav }: { nav: Nav }) {
     if (otpExpired) { setError("OTP expired. Please resend the code."); return }
     setBusy(true)
     try {
-      await api.register(name.trim(), email.trim().toLowerCase(), password, otpCode.trim())
+      await api.register(name.trim(), otpEmail || normalizedEmail, password, otpCode.trim())
       nav("consent")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed")
@@ -466,8 +471,8 @@ function RegisterScreen({ nav }: { nav: Nav }) {
                 </p>
               )}
               <button onClick={backToDetails} className="text-xs font-semibold text-gray-500">Edit sign-up details</button>
-              <button onClick={submit} disabled={busy} className="text-xs font-semibold" style={{ color: BLUE }}>
-                {busy ? "Sending..." : "Resend code"}
+              <button onClick={submit} disabled={busy} className="text-xs font-semibold disabled:opacity-60" style={{ color: BLUE }}>
+                {busy ? "Sending..." : otpExpired ? "Send a new code" : "Resend code"}
               </button>
             </>
           ) : (
@@ -499,7 +504,7 @@ function RegisterScreen({ nav }: { nav: Nav }) {
         )}
         {error && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl p-2">{error}</p>}
         {message && <p className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-xl p-2">{message}</p>}
-        <Btn onClick={otpRequested ? verifyRegistration : submit} color={(otpRequested || agreed) && !busy ? BLUE : "#9CA3AF"}>{busy ? (otpRequested ? "Verifying..." : "Sending OTP...") : (otpRequested ? "Verify & Continue" : "Send OTP")}</Btn>
+        <Btn onClick={otpRequested ? verifyRegistration : submit} color={(otpRequested || agreed) && !busy && !otpExpired ? BLUE : "#9CA3AF"}>{busy ? (otpRequested ? "Verifying..." : "Sending OTP...") : (otpRequested ? (otpExpired ? "Code Expired" : "Verify & Continue") : "Send OTP")}</Btn>
         <p className="text-center text-sm text-gray-500 pb-4">Already have an account? <button onClick={() => nav("login")} className="font-semibold" style={{ color: BLUE }}>Login</button></p>
       </ScrollArea>
     </div>
@@ -713,6 +718,64 @@ function bmiCategory(value: number | null | undefined) {
   return { label: "Obese", color: RED }
 }
 
+function ProfileInputRow({
+  label,
+  value,
+  onChange,
+  placeholder,
+  inputMode = "text",
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"]
+}) {
+  return (
+    <label className="block border-b border-gray-50 py-2.5 last:border-0">
+      <span className="mb-1 block text-sm font-medium text-gray-600">{label}</span>
+      <input
+        value={value}
+        inputMode={inputMode}
+        placeholder={placeholder}
+        onChange={event => onChange(event.target.value)}
+        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-semibold text-gray-900 placeholder:text-gray-400 focus:border-blue-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+      />
+    </label>
+  )
+}
+
+function ProfileSelectRow({
+  label,
+  value,
+  onChange,
+  placeholder = "Select",
+  children,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  children: React.ReactNode
+}) {
+  return (
+    <label className="block border-b border-gray-50 py-2.5 last:border-0">
+      <span className="mb-1 block text-sm font-medium text-gray-600">{label}</span>
+      <div className="relative">
+        <select
+          value={value}
+          onChange={event => onChange(event.target.value)}
+          className="w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 pr-9 text-sm font-semibold text-gray-900 focus:border-blue-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+        >
+          <option value="" disabled>{placeholder}</option>
+          {children}
+        </select>
+        <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+      </div>
+    </label>
+  )
+}
+
 // SCREEN 6 - Participant Profile
 function ParticipantProfileScreen({ nav }: { nav: Nav }) {
   const [age, setAge] = useState("")
@@ -743,16 +806,16 @@ function ParticipantProfileScreen({ nav }: { nav: Nav }) {
   useEffect(() => {
     api.getProfile()
       .then(profile => {
-        setAge(String(profile.age))
-        setGender(profile.gender)
-        setHeight(String(profile.height_cm))
-        setWeight(String(profile.weight_kg))
-        setEducation(profile.education)
-        setOccupation(profile.occupation)
-        setSmoking(profile.smoking)
-        setAlcohol(profile.alcohol)
-        setSleepHours(String(profile.sleep_hours))
-        setExerciseDays(String(profile.exercise_days_per_week))
+        setAge(profile.age == null ? "" : String(profile.age))
+        setGender(profile.gender || "")
+        setHeight(profile.height_cm == null ? "" : String(profile.height_cm))
+        setWeight(profile.weight_kg == null ? "" : String(profile.weight_kg))
+        setEducation(profile.education || "")
+        setOccupation(profile.occupation || "")
+        setSmoking(profile.smoking || "")
+        setAlcohol(profile.alcohol || "")
+        setSleepHours(profile.sleep_hours == null ? "" : String(profile.sleep_hours))
+        setExerciseDays(profile.exercise_days_per_week == null ? "" : String(profile.exercise_days_per_week))
         setHeartDisease(boolText(profile.heart_disease))
         setHypertension(boolText(profile.hypertension))
         setDiabetes(boolText(profile.diabetes))
@@ -800,46 +863,52 @@ function ParticipantProfileScreen({ nav }: { nav: Nav }) {
       <NavBar title="Participant Profile" onBack={() => nav("consent")} />
       <ScrollArea className="px-4 py-4 space-y-3">
         <SectionCard title="Personal Information">
-          <FormRow label="Age" value={age} onChange={setAge} />
-          <FormRow label="Gender" value={gender} onChange={setGender} />
-          <FormRow label="Height (cm)" value={height} onChange={setHeight} />
-          <FormRow label="Weight (kg)" value={weight} onChange={setWeight} />
-          <div className="flex items-center py-2.5 border-b border-gray-50">
-            <span className="text-sm text-gray-500 w-32 flex-shrink-0">BMI</span>
-            <span className="flex-1 text-sm font-bold text-right" style={{ color: bmiStatus.color }}>{bmi || "-"} {bmi ? `- ${bmiStatus.label}` : ""}</span>
+          <ProfileInputRow label="Age" value={age} onChange={setAge} placeholder="Enter age" inputMode="numeric" />
+          <ProfileSelectRow label="Gender" value={gender} onChange={setGender}>
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+            <option value="non-binary">Non-binary</option>
+            <option value="prefer-not-to-say">Prefer not to say</option>
+          </ProfileSelectRow>
+          <ProfileInputRow label="Height (cm)" value={height} onChange={setHeight} placeholder="Enter height in cm" inputMode="decimal" />
+          <ProfileInputRow label="Weight (kg)" value={weight} onChange={setWeight} placeholder="Enter weight in kg" inputMode="decimal" />
+          <div className="py-2.5 border-b border-gray-50">
+            <span className="mb-1 block text-sm font-medium text-gray-600">BMI</span>
+            <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm font-bold" style={{ color: bmiStatus.color }}>{bmi || "-"} {bmi ? `- ${bmiStatus.label}` : ""}</div>
           </div>
         </SectionCard>
         <SectionCard title="Education & Occupation">
-          <FormRow label="Education" value={education} onChange={setEducation} />
-          <FormRow label="Occupation" value={occupation} onChange={setOccupation} />
+          <ProfileInputRow label="Education" value={education} onChange={setEducation} placeholder="Highest education" />
+          <ProfileInputRow label="Occupation" value={occupation} onChange={setOccupation} placeholder="Current occupation" />
         </SectionCard>
         <SectionCard title="Lifestyle">
-          <div className="flex items-center py-2.5 border-b border-gray-50 gap-2">
-            <span className="text-sm text-gray-500 w-32 flex-shrink-0">Smoking</span>
-            <select value={smoking} onChange={e => setSmoking(e.target.value as typeof smoking)} className="flex-1 text-sm font-medium text-gray-800 bg-transparent focus:outline-none text-right">
-              <option value="" disabled>Select</option>
-              <option value="never">Never</option>
-              <option value="former">Former</option>
-              <option value="current">Current</option>
-            </select>
-          </div>
-          <div className="flex items-center py-2.5 border-b border-gray-50 gap-2">
-            <span className="text-sm text-gray-500 w-32 flex-shrink-0">Alcohol</span>
-            <select value={alcohol} onChange={e => setAlcohol(e.target.value as typeof alcohol)} className="flex-1 text-sm font-medium text-gray-800 bg-transparent focus:outline-none text-right">
-              <option value="" disabled>Select</option>
-              <option value="none">None</option>
-              <option value="occasional">Occasional</option>
-              <option value="regular">Regular</option>
-            </select>
-          </div>
-          <FormRow label="Sleep (hrs/day)" value={sleepHours} onChange={setSleepHours} />
-          <FormRow label="Exercise days/wk" value={exerciseDays} onChange={setExerciseDays} />
+          <ProfileSelectRow label="Smoking" value={smoking} onChange={value => setSmoking(value as typeof smoking)}>
+            <option value="never">Never</option>
+            <option value="former">Former</option>
+            <option value="current">Current</option>
+          </ProfileSelectRow>
+          <ProfileSelectRow label="Alcohol" value={alcohol} onChange={value => setAlcohol(value as typeof alcohol)}>
+            <option value="none">None</option>
+            <option value="occasional">Occasional</option>
+            <option value="regular">Regular</option>
+          </ProfileSelectRow>
+          <ProfileInputRow label="Sleep (hrs/day)" value={sleepHours} onChange={setSleepHours} placeholder="0-24" inputMode="decimal" />
+          <ProfileInputRow label="Exercise days/wk" value={exerciseDays} onChange={setExerciseDays} placeholder="0-7" inputMode="numeric" />
         </SectionCard>
         <SectionCard title="Medical History">
-          <FormRow label="Heart Disease" value={heartDisease} onChange={setHeartDisease} />
-          <FormRow label="Hypertension" value={hypertension} onChange={setHypertension} />
-          <FormRow label="Diabetes" value={diabetes} onChange={setDiabetes} />
-          <FormRow label="Medication" value={medication} onChange={setMedication} />
+          <ProfileSelectRow label="Heart Disease" value={heartDisease} onChange={setHeartDisease}>
+            <option value="No">No</option>
+            <option value="Yes">Yes</option>
+          </ProfileSelectRow>
+          <ProfileSelectRow label="Hypertension" value={hypertension} onChange={setHypertension}>
+            <option value="No">No</option>
+            <option value="Yes">Yes</option>
+          </ProfileSelectRow>
+          <ProfileSelectRow label="Diabetes" value={diabetes} onChange={setDiabetes}>
+            <option value="No">No</option>
+            <option value="Yes">Yes</option>
+          </ProfileSelectRow>
+          <ProfileInputRow label="Medication" value={medication} onChange={setMedication} placeholder="Medication details or None" />
         </SectionCard>
         {error && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl p-2">{error}</p>}
         <Btn onClick={save} color={busy || loading ? "#9CA3AF" : BLUE}>{busy ? "Saving..." : "Save & Continue"}</Btn>

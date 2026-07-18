@@ -25,6 +25,13 @@ const numberFromEnv = (key, fallback) => {
   return Number.isFinite(value) ? value : fallback;
 };
 
+const booleanFromEnv = (key, fallback = false) => {
+  const value = String(process.env[key] || "").trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(value)) return true;
+  if (["false", "0", "no", "off"].includes(value)) return false;
+  return fallback;
+};
+
 const defaultCorsOrigins = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
@@ -73,6 +80,8 @@ export const settings = {
   brevoApiKey: process.env.BREVO_API_KEY || "",
   brevoSenderEmail: process.env.BREVO_SENDER_EMAIL || "",
   brevoSenderName: process.env.BREVO_SENDER_NAME || "Stress Research Platform",
+  otpDevMode: booleanFromEnv("OTP_DEV_MODE", false),
+  otpExpiryMinutes: numberFromEnv("OTP_EXPIRY_MINUTES", numberFromEnv("OTP_EXPIRES_MINUTES", 10)),
   thingSpeakApiKey: process.env.THINGSPEAK_API_KEY || process.env.ThingSpeak_API_KEY || process.env.ThinkSpeak_API_KEY || "",
   thingSpeakChannelId: process.env.THINGSPEAK_CHANNEL_ID || process.env.ThingSpeak_CHANNEL_ID || process.env.ThinkSpeak_CHANNEL_ID || ""
 };

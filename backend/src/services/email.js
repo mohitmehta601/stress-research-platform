@@ -16,6 +16,16 @@ export async function sendEmail({ toEmail, toName, subject, text, html }) {
     console.log("");
     return { status: "skipped" };
   }
+
+  if (settings.brevoApiKey.startsWith("xsmtpsib-")) {
+    const error = new Error(
+      "BREVO_API_KEY is an SMTP key. Use a Brevo REST API key for transactional email delivery."
+    );
+    error.status = 500;
+    error.detail = error.message;
+    throw error;
+  }
+
   const response = await fetch(BREVO_SEND_URL, {
     method: "POST",
     headers: {

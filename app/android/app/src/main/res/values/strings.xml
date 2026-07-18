@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PulseLab Check-in</string>
+    <string name="title_activity_main">PulseLab Check-in</string>
+    <string name="package_name">com.pulselab.checkin</string>
+    <string name="custom_url_scheme">com.pulselab.checkin</string>
+</resources>

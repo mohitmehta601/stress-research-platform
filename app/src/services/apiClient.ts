@@ -45,6 +45,7 @@ export type OtpRequestResponse = {
   email?: string;
   expires_in_minutes?: number;
   expires_in_seconds?: number;
+  expires_at?: string;
   dev_otp?: string;
   otp_code?: string;
 };

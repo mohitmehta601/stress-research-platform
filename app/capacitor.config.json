@@ -1,0 +1,8 @@
+{
+  "appId": "com.pulselab.checkin",
+  "appName": "PulseLab Check-in",
+  "webDir": "dist-apk",
+  "server": {
+    "androidScheme": "https"
+  }
+}

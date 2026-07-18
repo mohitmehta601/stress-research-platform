@@ -43,7 +43,6 @@ import { asyncHandler, average, cleanDocument } from "../../utils/format.js";
 
 const router = express.Router();
 const participantFilter = { role: "participant" };
-const loginOtpTtlMinutes = 10;
 
 function makeError(status, detail) {
   const error = new Error(detail);
@@ -91,35 +90,49 @@ async function createOtpChallenge({ email, name, purpose, payload = null, partic
   const code = generateOtpCode();
   const otpToken = generateToken();
   const now = new Date();
+  const expiresAt = new Date(now.getTime() + settings.otpExpiryMinutes * 60 * 1000);
   await PasswordResetToken.create({
     purpose,
     token_hash: hashSecret(otpToken),
     otp_hash: hashSecret(code),
     used: false,
     created_at: now,
-    expires_at: new Date(now.getTime() + loginOtpTtlMinutes * 60 * 1000),
+    expires_at: expiresAt,
     ...(participantId ? { participant_id: participantId } : {}),
     ...(payload ? { payload } : {})
   });
-  await sendEmail({
-    toEmail: email,
-    toName: name,
-    subject: "Verification code",
-    text: `Your Stress Research Platform verification code is ${code}. It expires in ${loginOtpTtlMinutes} minutes.`,
-    html: `<p>Your Stress Research Platform verification code is <strong>${code}</strong>.</p><p>This code expires in ${loginOtpTtlMinutes} minutes.</p>`
-  });
+  if (!settings.otpDevMode) {
+    await sendEmail({
+      toEmail: email,
+      toName: name,
+      subject: "Verification code",
+      text: `Your Stress Research Platform verification code is ${code}. It expires in ${settings.otpExpiryMinutes} minutes.`,
+      html: `<p>Your Stress Research Platform verification code is <strong>${code}</strong>.</p><p>This code expires in ${settings.otpExpiryMinutes} minutes.</p>`
+    });
+  }
   return {
     requires_otp: true,
     otp_token: otpToken,
     email,
-    expires_in_seconds: loginOtpTtlMinutes * 60,
-    message: "Verification code sent to your email."
+    expires_in_minutes: settings.otpExpiryMinutes,
+    expires_in_seconds: settings.otpExpiryMinutes * 60,
+    expires_at: expiresAt.toISOString(),
+    message: settings.otpDevMode ? "Development OTP generated." : "Verification code sent to your email.",
+    ...(settings.otpDevMode ? { dev_otp: code, otp_code: code } : {})
   };
 }
 
 async function createEmailOtpChallenge({ email, name, purpose }) {
   const code = generateOtpCode();
   const now = new Date();
+  const expiresAt = new Date(now.getTime() + settings.otpExpiryMinutes * 60 * 1000);
+  await PasswordResetToken.updateMany({
+    purpose,
+    "payload.email": normalizeEmail(email),
+    used: false
+  }, {
+    $set: { used: true, used_at: now, replaced_at: now }
+  });
   await PasswordResetToken.create({
     purpose,
     token_hash: hashSecret(generateToken()),
@@ -127,29 +140,28 @@ async function createEmailOtpChallenge({ email, name, purpose }) {
     used: false,
     payload: { email },
     created_at: now,
-    expires_at: new Date(now.getTime() + loginOtpTtlMinutes * 60 * 1000)
+    expires_at: expiresAt
   });
   let emailResult;
-  try {
+  if (settings.otpDevMode) {
+    emailResult = { status: "skipped" };
+  } else {
     emailResult = await sendEmail({
       toEmail: email,
       toName: name,
       subject: "Verification code",
-      text: `Your Stress Research Platform verification code is ${code}. It expires in ${loginOtpTtlMinutes} minutes.`,
-      html: `<p>Your Stress Research Platform verification code is <strong>${code}</strong>.</p><p>This code expires in ${loginOtpTtlMinutes} minutes.</p>`
+      text: `Your Stress Research Platform verification code is ${code}. It expires in ${settings.otpExpiryMinutes} minutes.`,
+      html: `<p>Your Stress Research Platform verification code is <strong>${code}</strong>.</p><p>This code expires in ${settings.otpExpiryMinutes} minutes.</p>`
     });
-  } catch (error) {
-    if (settings.appEnv === "production") throw error;
-    console.warn("OTP email delivery failed; returning development OTP instead.", error.message);
-    emailResult = { status: "skipped" };
   }
   return {
     success: true,
-    message: "OTP sent",
+    message: settings.otpDevMode ? "Development OTP generated." : "OTP sent to your email.",
     email,
-    expires_in_minutes: loginOtpTtlMinutes,
-    expires_in_seconds: loginOtpTtlMinutes * 60,
-    ...(settings.appEnv !== "production" && emailResult?.status === "skipped" ? { dev_otp: code, otp_code: code } : {})
+    expires_in_minutes: settings.otpExpiryMinutes,
+    expires_in_seconds: settings.otpExpiryMinutes * 60,
+    expires_at: expiresAt.toISOString(),
+    ...(settings.otpDevMode && emailResult?.status === "skipped" ? { dev_otp: code, otp_code: code } : {})
   };
 }
 
