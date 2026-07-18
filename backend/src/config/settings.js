@@ -1,7 +1,12 @@
 import dotenv from "dotenv";
 import dns from "dns";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-dotenv.config({ path: "backend/.env" });
+const configDir = dirname(fileURLToPath(import.meta.url));
+const backendDir = resolve(configDir, "../..");
+
+dotenv.config({ path: resolve(backendDir, ".env"), override: true });
 dotenv.config();
 
 dns.setDefaultResultOrder("ipv4first");
@@ -53,9 +58,9 @@ export const settings = {
   port: numberFromEnv("PORT", 8010),
   mongodbUri: process.env.MONGODB_URI || "mongodb://localhost:27017",
   mongodbDirectUri: process.env.MONGODB_DIRECT_URI || "",
-  mongodbDatabase: process.env.MONGODB_DATABASE || "stress_research_platform",
+  mongodbDatabase: process.env.MONGODB_DATABASE || process.env.MONGODB_DB_NAME || "stress_research_platform",
   corsOrigins,
-  jwtSecret: process.env.JWT_SECRET || "development-only-change-me-32-characters-minimum",
+  jwtSecret: process.env.JWT_SECRET || process.env.JWT_SECRET_KEY || "development-only-change-me-32-characters-minimum",
   jwtAlgorithm: process.env.JWT_ALGORITHM || "HS256",
   accessTokenMinutes: numberFromEnv("ACCESS_TOKEN_MINUTES", 60),
   refreshTokenDays: numberFromEnv("REFRESH_TOKEN_DAYS", 30),

@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 const { Schema } = mongoose;
 
 const loose = { strict: false, timestamps: false, minimize: false };
+const looseSchema = (collection) => new Schema({}, { ...loose, collection });
 
 const participantSchema = new Schema(
   {
@@ -25,6 +26,10 @@ const participantSchema = new Schema(
 
 participantSchema.index({ role: 1, created_at: -1 });
 participantSchema.index({ approval_status: 1, role: 1 });
+participantSchema.index({ role: 1, participant_code: 1 });
+participantSchema.index({ role: 1, email: 1 });
+participantSchema.index({ consent_completed: 1, role: 1 });
+participantSchema.index({ profile_completed: 1, role: 1 });
 
 const sessionSchema = new Schema(
   {
@@ -50,6 +55,18 @@ sessionSchema.index(
 );
 sessionSchema.index({ status: 1, started_at: -1 });
 sessionSchema.index({ condition: 1, started_at: -1 });
+sessionSchema.index({ signal_quality: 1, started_at: -1 });
+sessionSchema.index({ condition: 1, status: 1, started_at: -1 });
+sessionSchema.index({ "physiological.signal_quality": 1, "physiological.recorded_at": -1 });
+sessionSchema.index({ condition: 1, "physiological.recorded_at": -1 });
+sessionSchema.index(
+  { "questionnaire.submitted_at": -1 },
+  { partialFilterExpression: { questionnaire: { $exists: true } } }
+);
+sessionSchema.index(
+  { "doctor_assessment.created_at": -1 },
+  { partialFilterExpression: { doctor_assessment: { $exists: true } } }
+);
 
 const tokenSchema = new Schema(
   {
@@ -76,6 +93,8 @@ const dashboardAccessRequestSchema = new Schema(
 );
 
 dashboardAccessRequestSchema.index({ email: 1, status: 1 });
+dashboardAccessRequestSchema.index({ status: 1, requested_at: -1 });
+dashboardAccessRequestSchema.index({ requested_role: 1, status: 1 });
 
 const notificationSchema = new Schema(
   {
@@ -84,21 +103,45 @@ const notificationSchema = new Schema(
   loose
 );
 
-const looseSchema = (collection) => new Schema({}, { ...loose, collection });
+notificationSchema.index({ read: 1, created_at: -1 });
+notificationSchema.index({ type: 1, created_at: -1 });
+notificationSchema.index({ related_id: 1, created_at: -1 });
+
+const physiologicalSchema = looseSchema("physiological");
+physiologicalSchema.index({ participant_id: 1, recorded_at: -1 });
+physiologicalSchema.index({ session_id: 1 }, { sparse: true });
+physiologicalSchema.index({ condition: 1, recorded_at: -1 });
+physiologicalSchema.index({ signal_quality: 1, recorded_at: -1 });
+physiologicalSchema.index({ thingspeak_entry_id: 1 }, { sparse: true });
+
+const questionnaireResponseSchema = looseSchema("questionnaire_responses");
+questionnaireResponseSchema.index({ participant_id: 1, submitted_at: -1 });
+questionnaireResponseSchema.index({ session_id: 1 }, { sparse: true });
+questionnaireResponseSchema.index({ condition: 1, submitted_at: -1 });
+questionnaireResponseSchema.index({ questionnaire_key: 1, submitted_at: -1 });
+
+const doctorAssessmentSchema = looseSchema("doctor_assessments");
+doctorAssessmentSchema.index({ participant_id: 1, created_at: -1 });
+doctorAssessmentSchema.index({ session_id: 1 }, { sparse: true });
+doctorAssessmentSchema.index({ clinical_stress: 1, created_at: -1 });
+doctorAssessmentSchema.index({ status: 1, created_at: -1 });
 
 export const Participant = mongoose.model("Participant", participantSchema, "participants");
 export const ResearchSession = mongoose.model("ResearchSession", sessionSchema, "sessions");
 export const PasswordResetToken = mongoose.model("PasswordResetToken", tokenSchema, "password_reset_tokens");
 export const DashboardAccessRequest = mongoose.model("DashboardAccessRequest", dashboardAccessRequestSchema, "dashboard_access_requests");
 export const Notification = mongoose.model("Notification", notificationSchema, "notifications");
-export const Physiological = mongoose.model("Physiological", looseSchema("physiological"));
-export const QuestionnaireResponse = mongoose.model("QuestionnaireResponse", looseSchema("questionnaire_responses"));
-export const DoctorAssessment = mongoose.model("DoctorAssessment", looseSchema("doctor_assessments"));
+export const Physiological = mongoose.model("Physiological", physiologicalSchema, "physiological");
+export const QuestionnaireResponse = mongoose.model("QuestionnaireResponse", questionnaireResponseSchema, "questionnaire_responses");
+export const DoctorAssessment = mongoose.model("DoctorAssessment", doctorAssessmentSchema, "doctor_assessments");
 
 export const models = {
   Participant,
   ResearchSession,
   PasswordResetToken,
   DashboardAccessRequest,
-  Notification
+  Notification,
+  Physiological,
+  QuestionnaireResponse,
+  DoctorAssessment
 };
