@@ -3,7 +3,9 @@ function normalizeApiBase(url?: string): string {
   return baseUrl.endsWith("/api") ? baseUrl : `${baseUrl}/api`;
 }
 
-const API_BASE = normalizeApiBase(import.meta.env?.VITE_API_URL);
+const API_BASE = normalizeApiBase(
+  import.meta.env?.VITE_API_BASE_URL || import.meta.env?.VITE_API_URL,
+);
 const TOKEN_KEY = "stresssense_token";
 const REFRESH_TOKEN_KEY = "stresssense_refresh_token";
 const SESSION_KEY = "stresssense_session_id";
@@ -171,7 +173,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       },
     });
   } catch (error) {
-    throw new Error(`Cannot reach backend API at ${API_BASE}. Start FastAPI on port 8010.`);
+    throw new Error(`Cannot reach backend API at ${API_BASE}. Start the Express API on port 8010.`);
   }
   if (!res.ok) {
     if (res.status === 401 && path !== "/auth/refresh" && localStorage.getItem(REFRESH_TOKEN_KEY)) {

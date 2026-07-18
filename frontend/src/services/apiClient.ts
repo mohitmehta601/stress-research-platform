@@ -8,7 +8,9 @@ function normalizeApiBase(url?: string): string {
   return baseUrl.endsWith("/api") ? baseUrl : `${baseUrl}/api`;
 }
 
-const API_BASE = normalizeApiBase(import.meta.env?.VITE_API_URL);
+const API_BASE = normalizeApiBase(
+  import.meta.env?.VITE_API_BASE_URL || import.meta.env?.VITE_API_URL,
+);
 const TOKEN_KEY = "srp_token";
 const REFRESH_TOKEN_KEY = "srp_refresh_token";
 const USER_KEY = "srp_user";

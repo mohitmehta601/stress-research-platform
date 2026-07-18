@@ -2,29 +2,29 @@
 
 Backend-first research platform for managing participants, consent, multimodal stress sessions, questionnaires, doctor labels, and export-ready datasets.
 
-The frontend is a Vite React researcher dashboard connected to the FastAPI backend. The mobile folder contains the StressSense Vite prototype connected to the same backend participant/session APIs.
+The frontend is a Vite React researcher dashboard connected to the Express/MongoDB backend. The `app/` workspace contains the StressSense participant app prototype connected to the same participant/session APIs.
 
-## Run backend locally
+## Run Backend Locally
 
-```bash
-python -m venv .venv
-python -m pip install -r backend/requirements.txt
-python -m uvicorn backend.main:app --reload
+```powershell
+cd backend
+npm install
+npm run dev
 ```
 
 Configure `backend/.env` and ensure MongoDB is running.
 
-FastAPI documentation:
+API health check:
 
 ```text
-http://localhost:8000/docs
+http://localhost:8010/api
 ```
 
-## Run frontend locally
+## Run Frontend Locally
 
 Researcher dashboard, in a second terminal:
 
-```bash
+```powershell
 npm run web
 ```
 
@@ -34,10 +34,10 @@ Open:
 http://localhost:5173/researcher/login
 ```
 
-Mobile participant prototype, in a third terminal:
+Participant app prototype, in a third terminal:
 
-```bash
-npm run mobile
+```powershell
+npm run app
 ```
 
 Open:
@@ -46,35 +46,27 @@ Open:
 http://localhost:5174
 ```
 
-Development researcher credentials:
+## Project Layout
 
-```text
-researcher@stressplatform.dev
-ChangeMe123!
-```
+- `backend/` - Express API, MongoDB/Mongoose models, services, middleware, and route modules
+- `frontend/` - Vite React researcher dashboard
+- `app/` - StressSense participant app prototype
+- `database/` - MongoDB schema, seed, and export helpers
+- `docs/` - product, API, architecture, and research notes
 
-## Project layout
+## Verify
 
-- `backend/` — FastAPI service and MongoDB integration
-- `frontend/` — Vite React researcher dashboard
-- `mobile/` — StressSense Vite mobile prototype
-- `database/` — MongoDB schema, seed, and export helpers
-- `docs/` — product, API, architecture, and research notes
-
-## Verify backend
-
-```bash
-python -m compileall -q backend
+```powershell
 npm test
 npm run build:web
-npm run build:mobile
+npm run build:app
 ```
 
-## Optional demo data
+## Optional Demo Data
 
 Optional representative dashboard data can be loaded with `mongosh` if it is installed:
 
-```bash
+```powershell
 mongosh "mongodb://localhost:27017/stress_research_platform" database/schema.js
 mongosh "mongodb://localhost:27017/stress_research_platform" database/seed.js
 ```

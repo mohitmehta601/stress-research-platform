@@ -670,7 +670,7 @@ function Topbar({ user }: TopbarProps) {
   );
 }
 
-export function Layout({ user }: TopbarProps) {
+export function DashboardLayout({ user }: TopbarProps) {
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
