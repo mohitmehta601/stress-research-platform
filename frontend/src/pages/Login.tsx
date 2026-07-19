@@ -9,7 +9,6 @@ import {
   Eye,
   EyeOff,
   FileSpreadsheet,
-  FlaskRound,
   Loader2,
   LockKeyhole,
   MailCheck,
@@ -263,8 +262,12 @@ export default function Login() {
         </div>
 
         <div className="relative z-10 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0f9f95] shadow-lg shadow-teal-950/30">
-            <FlaskRound size={20} className="text-white" />
+          <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-white shadow-lg shadow-teal-950/30">
+            <img
+              src="/logo.png"
+              alt="Stress Research Platform logo"
+              className="h-full w-full object-cover"
+            />
           </div>
 
           <div>
@@ -329,8 +332,12 @@ export default function Login() {
       <main className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-8 lg:px-12">
         <div className="w-full max-w-[440px]">
           <div className="mb-10 flex items-center gap-3 lg:hidden">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#173764]">
-              <FlaskRound size={19} className="text-white" />
+            <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+              <img
+                src="/logo.png"
+                alt="Stress Research Platform logo"
+                className="h-full w-full object-cover"
+              />
             </div>
 
             <div>

@@ -4,7 +4,6 @@ import {
   ClipboardList,
   Download,
   FlaskConical,
-  FlaskRound,
   LayoutDashboard,
   LogOut,
   Settings,
@@ -44,8 +43,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     <>
       <div className="border-b px-5 py-5" style={{ borderColor: "var(--sidebar-border)" }}>
         <div className="flex items-center gap-2.5">
-          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-[#0d9488]">
-            <FlaskRound size={14} className="text-white" />
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-white">
+            <img
+              src="/logo.png"
+              alt="Stress Research Platform logo"
+              className="h-full w-full object-cover"
+            />
           </div>
           <div className="min-w-0">
             <div className="text-xs font-semibold leading-tight text-white">Stress Research</div>

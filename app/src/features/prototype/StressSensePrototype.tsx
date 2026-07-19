@@ -307,8 +307,12 @@ function SplashScreen({ nav }: { nav: Nav }) {
     <div className="flex flex-col min-h-full" style={{ background: `linear-gradient(160deg, ${NAVY} 0%, #0D2B5C 55%, #071A36 100%)` }}>
       <div className="flex-1 flex flex-col items-center justify-center px-6 pt-10 pb-4">
         {/* Logo */}
-        <div className="w-20 h-20 rounded-3xl flex items-center justify-center mb-4 shadow-lg" style={{ backgroundColor: "rgba(29,104,240,0.25)", border: "1.5px solid rgba(29,104,240,0.4)" }}>
-          <Brain size={40} className="text-blue-300" />
+        <div className="w-24 h-24 rounded-3xl flex items-center justify-center mb-4 shadow-lg overflow-hidden bg-white" style={{ border: "1.5px solid rgba(255,255,255,0.55)" }}>
+          <img
+            src="/logo.png"
+            alt="StressSense logo"
+            className="h-full w-full object-cover"
+          />
         </div>
         <h1 className="text-white text-3xl font-bold tracking-tight mb-1" style={{ fontFamily: "'Outfit', sans-serif" }}>StressSense</h1>
         <p className="text-blue-200 text-xs text-center font-medium tracking-wide">Multimodal Stress Data Collection Platform</p>
@@ -611,8 +615,12 @@ function LoginScreen({ nav, onLogin }: { nav: Nav; onLogin: (role: "participant"
       <ScrollArea className="px-[clamp(1rem,5vw,1.5rem)] py-[clamp(1.25rem,4.5svh,2rem)]">
         {/* Brand mark */}
         <div className="flex flex-col items-center mb-[clamp(1.5rem,5svh,2rem)]">
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3 shadow" style={{ backgroundColor: BLUE }}>
-            <Brain size={28} className="text-white" />
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-3 shadow overflow-hidden bg-white ring-1 ring-blue-100">
+            <img
+              src="/logo.png"
+              alt="StressSense logo"
+              className="h-full w-full object-cover"
+            />
           </div>
           <h2 className="text-xl font-bold text-gray-900" style={{ fontFamily: "'Outfit', sans-serif" }}>Welcome back</h2>
           <p className="text-sm text-gray-500 mt-0.5">{resetToken ? "Set a new password" : "Sign in to continue"}</p>
@@ -2587,8 +2595,12 @@ function StaffLoginScreen({ nav, onLogin }: { nav: Nav; onLogin: (r: "participan
       <NavBar title="Staff Sign In" onBack={() => nav("splash")} />
       <ScrollArea className="px-4 py-8">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-3 shadow-lg" style={{ backgroundColor: "rgba(29,104,240,0.3)", border: "1.5px solid rgba(29,104,240,0.5)" }}>
-            <Stethoscope size={30} className="text-blue-300" />
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-3 shadow-lg overflow-hidden bg-white" style={{ border: "1.5px solid rgba(255,255,255,0.55)" }}>
+            <img
+              src="/logo.png"
+              alt="StressSense logo"
+              className="h-full w-full object-cover"
+            />
           </div>
           <h2 className="text-xl font-bold text-white">Researcher / Doctor Sign In</h2>
           <p className="text-blue-200 text-sm text-center mt-1.5 leading-relaxed">Authorized research personnel only.</p>
