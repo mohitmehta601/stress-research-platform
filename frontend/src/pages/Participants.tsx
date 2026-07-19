@@ -155,7 +155,7 @@ function DetailDrawer({
   return (
     <div className="fixed inset-0 z-30 flex justify-end">
       <div className="absolute inset-0 bg-black/20" onClick={onClose} />
-      <aside className="relative z-10 h-full w-[420px] overflow-y-auto border-l border-border bg-card shadow-xl">
+      <aside className="relative z-10 h-full w-full max-w-[420px] overflow-y-auto border-l border-border bg-card shadow-xl">
         <div className="sticky top-0 flex items-center justify-between border-b border-border bg-card px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1a3461] text-sm font-semibold text-white">
@@ -287,7 +287,7 @@ function ParticipantEditor({
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/25" onClick={onClose} />
-      <aside className="relative z-10 h-full w-[520px] overflow-y-auto border-l border-border bg-card shadow-2xl">
+      <aside className="relative z-10 h-full w-full max-w-[520px] overflow-y-auto border-l border-border bg-card shadow-2xl">
         <div className="sticky top-0 flex items-center justify-between border-b border-border bg-card px-5 py-4">
           <div>
             <h2 className="text-sm font-semibold text-foreground">{isEdit ? "Edit participant" : "Add participant"}</h2>
@@ -431,23 +431,23 @@ export default function Participants() {
   }
 
   return (
-    <div>
-      <div className="mb-5 flex items-center justify-between">
-        <div>
+    <div className="min-w-0">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-lg font-semibold text-foreground">Participants</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">{participants.length} enrolled participants · manual entries save to MongoDB</p>
         </div>
         <button
           onClick={() => setEditing(null)}
-          className="flex items-center gap-2 rounded bg-[#1d4ed8] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1e40af]"
+          className="flex w-full items-center justify-center gap-2 rounded bg-[#1d4ed8] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1e40af] sm:w-auto"
         >
           <Plus size={14} />
           Add Participant
         </button>
       </div>
 
-      <div className="mb-4 flex items-center gap-3">
-        <div className="relative max-w-xs flex-1">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="relative min-w-0 sm:max-w-xs sm:flex-1">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             className="w-full rounded border border-border bg-card py-1.5 pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
@@ -475,8 +475,8 @@ export default function Participants() {
           Loading...
         </div>
       ) : (
-        <div className="overflow-hidden rounded border border-border bg-card shadow-sm">
-          <table className="w-full text-xs">
+        <div className="min-w-0 overflow-x-auto rounded border border-border bg-card shadow-sm">
+          <table className="min-w-[920px] w-full text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/60">
                 {["Participant ID", "Name", "Age", "Gender", "Occupation", "Consent", "Profile", "Sessions", "Last Session", "Actions"].map((h) => (

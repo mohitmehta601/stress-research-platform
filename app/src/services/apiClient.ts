@@ -1,3 +1,5 @@
+import { Capacitor, CapacitorHttp } from "@capacitor/core";
+
 function normalizeApiBase(url?: string): string {
   const baseUrl = (url || "http://127.0.0.1:8010/api").replace(/\/$/, "");
   return baseUrl.endsWith("/api") ? baseUrl : `${baseUrl}/api`;
@@ -11,6 +13,10 @@ const REFRESH_TOKEN_KEY = "stresssense_refresh_token";
 const SESSION_KEY = "stresssense_session_id";
 const SESSION_CODE_KEY = "stresssense_session_code";
 const USER_KEY = "stresssense_user";
+const PENDING_SESSION_KEY = "stresssense_pending_session";
+const PENDING_PHYSIO_KEY = "stresssense_pending_physiological";
+const PENDING_QUESTIONNAIRE_KEY = "stresssense_pending_questionnaire";
+const IST_TIME_ZONE = "Asia/Kolkata";
 let accessToken: string | null =
   typeof window === "undefined" ? null : localStorage.getItem(TOKEN_KEY);
 
@@ -49,6 +55,32 @@ export type OtpRequestResponse = {
   dev_otp?: string;
   otp_code?: string;
 };
+
+type PendingSession = {
+  condition: "relaxed" | "stress";
+  task?: string;
+};
+
+type PendingQuestionnaire = {
+  score: number;
+  answers: Record<string, unknown>;
+};
+
+function readJson<T>(key: string): T | null {
+  try {
+    return JSON.parse(localStorage.getItem(key) || "null") as T | null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingSessionData() {
+  localStorage.removeItem(PENDING_SESSION_KEY);
+  localStorage.removeItem(PENDING_PHYSIO_KEY);
+  localStorage.removeItem(PENDING_QUESTIONNAIRE_KEY);
+  localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem(SESSION_CODE_KEY);
+}
 
 export type ParticipantProfilePayload = {
   age: number;
@@ -147,7 +179,7 @@ function dateText(value?: string | null): string {
   const normalized = /\dT\d/.test(value) && !/[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? `${value}Z` : value;
   const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return `${date.toLocaleString("en-GB", { timeZone: IST_TIME_ZONE, day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} IST`;
 }
 
 function qualityText(value?: string | null): MobileSession["quality"] {
@@ -161,20 +193,86 @@ function isBackendUnavailable(error: unknown): boolean {
   return error instanceof Error && error.message.includes("Cannot reach backend API");
 }
 
+function requestHeaders(headers?: HeadersInit): Record<string, string> {
+  const merged: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const activeToken = token();
+  if (activeToken) merged.Authorization = `Bearer ${activeToken}`;
+
+  if (headers instanceof Headers) {
+    headers.forEach((value, key) => {
+      merged[key] = value;
+    });
+  } else if (Array.isArray(headers)) {
+    headers.forEach(([key, value]) => {
+      merged[key] = value;
+    });
+  } else if (headers) {
+    Object.entries(headers).forEach(([key, value]) => {
+      if (value !== undefined) merged[key] = String(value);
+    });
+  }
+
+  return merged;
+}
+
+function requestData(body: BodyInit | null | undefined) {
+  if (typeof body !== "string") return body;
+  try {
+    return JSON.parse(body);
+  } catch {
+    return body;
+  }
+}
+
+function parseResponseData(data: unknown) {
+  if (typeof data !== "string") return data;
+  try {
+    return JSON.parse(data);
+  } catch {
+    return data;
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  if (Capacitor.isNativePlatform()) {
+    let response: Awaited<ReturnType<typeof CapacitorHttp.request>>;
+    try {
+      response = await CapacitorHttp.request({
+        method: options.method || "GET",
+        url: `${API_BASE}${path}`,
+        headers: requestHeaders(options.headers),
+        data: requestData(options.body),
+      });
+    } catch {
+      throw new Error(`Cannot reach backend API at ${API_BASE}. Please check your internet connection or try again after the Render service wakes up.`);
+    }
+
+    const data = parseResponseData(response.data);
+    if (response.status < 200 || response.status >= 300) {
+      if (response.status === 401 && path !== "/auth/refresh" && localStorage.getItem(REFRESH_TOKEN_KEY)) {
+        const refreshed = await refreshSession();
+        if (refreshed) return request<T>(path, options);
+      }
+      const detail = data && typeof data === "object" && "detail" in data
+        ? String((data as { detail?: unknown }).detail)
+        : `Request failed (${response.status})`;
+      throw new Error(detail);
+    }
+
+    return data as T;
+  }
+
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
       ...options,
       credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token() ? { Authorization: `Bearer ${token()}` } : {}),
-        ...(options.headers ?? {}),
-      },
+      headers: requestHeaders(options.headers),
     });
   } catch (error) {
-    throw new Error(`Cannot reach backend API at ${API_BASE}. Start the Express API on port 8010.`);
+    throw new Error(`Cannot reach backend API at ${API_BASE}. Please check your internet connection or try again after the Render service wakes up.`);
   }
   if (!res.ok) {
     if (res.status === 401 && path !== "/auth/refresh" && localStorage.getItem(REFRESH_TOKEN_KEY)) {
@@ -316,13 +414,15 @@ export const api = {
     });
   },
   async createSession(condition: "relaxed" | "stress", task?: string) {
-    const session = await request<{ id: string; session_code: string }>("/sessions", {
-      method: "POST",
-      body: JSON.stringify({ condition, task }),
-    });
-    api.activeSessionId = session.id;
-    api.activeSessionCode = session.session_code;
-    return session;
+    const pending: PendingSession = { condition, task };
+    localStorage.setItem(PENDING_SESSION_KEY, JSON.stringify(pending));
+    localStorage.removeItem(PENDING_PHYSIO_KEY);
+    localStorage.removeItem(PENDING_QUESTIONNAIRE_KEY);
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(SESSION_CODE_KEY);
+    api.activeSessionId = null;
+    api.activeSessionCode = null;
+    return { id: "", session_code: "Pending" };
   },
   useSession(sessionId?: string | null, sessionCode?: string | null) {
     api.activeSessionId = sessionId || null;
@@ -330,12 +430,19 @@ export const api = {
   },
   savePhysiological(condition: "relaxed" | "stress") {
     const sessionId = api.activeSessionId;
-    if (!sessionId) return Promise.resolve();
+    if (!sessionId) {
+      localStorage.setItem(PENDING_PHYSIO_KEY, JSON.stringify({ condition, collected: true }));
+      return Promise.resolve();
+    }
     return request(`/sessions/${sessionId}/thingspeak-sync`, { method: "POST" });
   },
   saveQuestionnaire(score: number, answers: Record<string, unknown>) {
     const sessionId = api.activeSessionId;
-    if (!sessionId) return Promise.resolve();
+    if (!sessionId) {
+      const pending: PendingQuestionnaire = { score, answers };
+      localStorage.setItem(PENDING_QUESTIONNAIRE_KEY, JSON.stringify(pending));
+      return Promise.resolve();
+    }
     return request("/questionnaires", {
       method: "POST",
       body: JSON.stringify({
@@ -346,10 +453,37 @@ export const api = {
       }),
     });
   },
-  completeSession() {
-    const sessionId = api.activeSessionId;
+  async completeSession() {
+    let sessionId = api.activeSessionId;
+    if (!sessionId) {
+      const pendingSession = readJson<PendingSession>(PENDING_SESSION_KEY);
+      const pendingQuestionnaire = readJson<PendingQuestionnaire>(PENDING_QUESTIONNAIRE_KEY);
+      if (!pendingSession || !pendingQuestionnaire || Object.keys(pendingQuestionnaire.answers || {}).length === 0) {
+        throw new Error("Complete the full session flow before saving.");
+      }
+      const result = await request("/sessions/complete-flow", {
+        method: "POST",
+        body: JSON.stringify({
+          ...pendingSession,
+          physiological_collected: Boolean(localStorage.getItem(PENDING_PHYSIO_KEY)),
+          questionnaire: {
+            questionnaire_key: "msaq-v1",
+            answers: pendingQuestionnaire.answers,
+            score: pendingQuestionnaire.score,
+          },
+        }),
+      });
+      clearPendingSessionData();
+      api.activeSessionId = null;
+      api.activeSessionCode = null;
+      return result;
+    }
     if (!sessionId) return Promise.resolve();
-    return request(`/sessions/${sessionId}/complete`, { method: "POST" });
+    const result = await request(`/sessions/${sessionId}/complete`, { method: "POST" });
+    clearPendingSessionData();
+    api.activeSessionId = null;
+    api.activeSessionCode = null;
+    return result;
   },
   saveDoctorAssessment(label: "Low" | "Moderate" | "High" | "Severe", comments?: string) {
     const sessionId = api.activeSessionId;

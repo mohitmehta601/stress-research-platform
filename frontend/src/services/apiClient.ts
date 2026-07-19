@@ -15,6 +15,7 @@ const TOKEN_KEY = "srp_token";
 const REFRESH_TOKEN_KEY = "srp_refresh_token";
 const USER_KEY = "srp_user";
 const ACCESS_REQUESTS_KEY = "srp_access_requests";
+const IST_TIME_ZONE = "Asia/Kolkata";
 let accessToken: string | null =
   typeof window === "undefined" ? null : localStorage.getItem(TOKEN_KEY);
 
@@ -329,11 +330,36 @@ function splitDateTime(value?: string | null): { date: string; time: string } {
   const normalized = /\dT\d/.test(value) && !/[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? `${value}Z` : value;
   const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) return { date: value.slice(0, 10), time: "" };
-  const pad = (input: number) => String(input).padStart(2, "0");
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    timeZone: IST_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date).map((part) => [part.type, part.value]));
   return {
-    date: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
-    time: `${pad(date.getHours())}:${pad(date.getMinutes())}`,
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`,
   };
+}
+
+export function formatDateTimeIST(value?: string | null): string {
+  if (!value) return "";
+  const normalized = /\dT\d/.test(value) && !/[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? `${value}Z` : value;
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    timeZone: IST_TIME_ZONE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date).map((part) => [part.type, part.value]));
+  return `${parts.day} ${parts.month} ${parts.year}, ${parts.hour}:${parts.minute} IST`;
 }
 
 function toAuthUser(data: BackendLogin["participant"] | AuthUser | undefined): AuthUser {

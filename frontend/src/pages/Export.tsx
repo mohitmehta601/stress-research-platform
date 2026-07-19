@@ -143,7 +143,7 @@ export default function Export() {
         </button>
       </div>
 
-      <div className="bg-card rounded border border-border shadow-sm overflow-hidden">
+      <div className="min-w-0 overflow-hidden rounded border border-border bg-card shadow-sm">
         <div className="px-4 py-3 border-b border-border flex items-center justify-between">
           <div>
             <span className="text-xs font-semibold text-foreground">Final Dataset Preview</span>
@@ -151,7 +151,7 @@ export default function Export() {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="min-w-[760px] w-full text-xs">
             <thead>
               <tr className="bg-muted/60 border-b border-border">
                 {["Participant", "Session", "Condition", "ECG", "HRV", "EDA", "Temp", "Questionnaire", "Doctor Label"].map((h) => (

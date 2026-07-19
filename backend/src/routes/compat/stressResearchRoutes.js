@@ -5,6 +5,7 @@ import {
   Notification,
   Participant,
   PasswordResetToken,
+  QuestionnaireResponse,
   ResearchSession
 } from "../../models/index.js";
 import { settings } from "../../config/settings.js";
@@ -317,6 +318,45 @@ function publicSession(document) {
   };
 }
 
+function hasFilledQuestionnaireAnswers(questionnaire) {
+  return Boolean(
+    questionnaire
+    && questionnaire.answers
+    && typeof questionnaire.answers === "object"
+    && Object.keys(questionnaire.answers).length > 0
+  );
+}
+
+async function upsertQuestionnaireResponse(session, questionnaire) {
+  if (!hasFilledQuestionnaireAnswers(questionnaire)) {
+    await QuestionnaireResponse.deleteOne({ session_id: session._id });
+    return;
+  }
+
+  const submittedAt = questionnaire.submitted_at || new Date();
+  await QuestionnaireResponse.updateOne(
+    { session_id: session._id },
+    {
+      $set: {
+        participant_id: session.participant_id,
+        participant_code: session.participant_code,
+        session_id: session._id,
+        session_code: session.session_code,
+        condition: questionnaire.condition || session.condition,
+        questionnaire_key: questionnaire.questionnaire_key || "post-session-v1",
+        answers: questionnaire.answers || {},
+        score: questionnaire.score ?? null,
+        submitted_at: submittedAt,
+        updated_at: questionnaire.updated_at || submittedAt
+      },
+      $setOnInsert: {
+        created_at: submittedAt
+      }
+    },
+    { upsert: true }
+  );
+}
+
 async function syncManualSessionChildren(session, payload) {
   const now = new Date();
   const set = { updated_at: now };
@@ -352,11 +392,13 @@ async function syncManualSessionChildren(session, payload) {
     set.signal_quality = "pending";
   }
   if (payload.questionnaire_completed) {
+    const existingQuestionnaire = session.questionnaire || {};
     set.questionnaire = {
       condition: payload.condition,
-      answers: {},
+      questionnaire_key: payload.questionnaire_key || existingQuestionnaire.questionnaire_key || "manual-dashboard-v1",
+      answers: existingQuestionnaire.answers || {},
       score: payload.questionnaire_score ?? null,
-      submitted_at: payload.completed_at ? new Date(payload.completed_at) : payload.started_at ? new Date(payload.started_at) : now,
+      submitted_at: existingQuestionnaire.submitted_at || (payload.completed_at ? new Date(payload.completed_at) : payload.started_at ? new Date(payload.started_at) : now),
       updated_at: now
     };
   } else {
@@ -374,6 +416,7 @@ async function syncManualSessionChildren(session, payload) {
     unset.doctor_assessment = "";
   }
   await ResearchSession.updateOne({ _id: session._id }, { $set: set, ...(Object.keys(unset).length ? { $unset: unset } : {}) });
+  await upsertQuestionnaireResponse(session, set.questionnaire || null);
 }
 
 router.get("/", (_req, res) => res.json({ status: "ok", database: "mongodb" }));
@@ -631,6 +674,58 @@ router.post("/sessions", requireParticipant, asyncHandler(async (req, res) => {
   res.status(201).json(publicSession(session));
 }));
 
+router.post("/sessions/complete-flow", requireParticipant, asyncHandler(async (req, res) => {
+  if (req.participant.role !== "participant") throw makeError(403, "Participant access is required");
+  if (!req.participant.consent_completed || !req.participant.profile_completed) throw makeError(403, "Consent and profile are required before sessions");
+  if (!["relaxed", "stress"].includes(req.body.condition)) throw makeError(400, "Session condition is required");
+  if (!hasFilledQuestionnaireAnswers({ answers: req.body.questionnaire?.answers })) throw makeError(400, "Complete questionnaire answers are required before saving a session");
+
+  const now = new Date();
+  const count = await ResearchSession.countDocuments({ participant_id: req.participant._id });
+  const questionnaireValues = Object.values(req.body.questionnaire.answers || {}).filter((value) => typeof value === "number");
+  const score = req.body.questionnaire.score ?? (questionnaireValues.length ? Math.round(questionnaireValues.reduce((sum, value) => sum + value, 0) * 100) / 100 : null);
+  let physiological = null;
+
+  if (req.body.physiological_collected) {
+    const latest = await fetchLatestThingSpeakReading();
+    physiological = {
+      ...latest,
+      condition: req.body.condition,
+      recorded_at: latest.recorded_at ? new Date(latest.recorded_at) : now,
+      updated_at: now
+    };
+  }
+
+  const questionnaire = {
+    condition: req.body.condition,
+    questionnaire_key: req.body.questionnaire.questionnaire_key || "msaq-v1",
+    answers: req.body.questionnaire.answers,
+    score,
+    submitted_at: now,
+    updated_at: now
+  };
+
+  const session = await ResearchSession.create({
+    participant_id: req.participant._id,
+    session_code: `S${String(count + 1).padStart(2, "0")}`,
+    condition: req.body.condition,
+    task: req.body.task,
+    status: "completed",
+    started_at: now,
+    completed_at: now,
+    duration_seconds: 0,
+    signal_quality: physiological?.signal_quality || "pending",
+    physiological,
+    questionnaire,
+    created_at: now,
+    updated_at: now
+  });
+
+  await upsertQuestionnaireResponse(session, questionnaire);
+  await createNotification("research_session_completed", "Research session completed", `${session.session_code} completed by ${req.participant.participant_code || "participant"}.`, session._id);
+  res.status(201).json(publicSession(session));
+}));
+
 router.get("/sessions/me", requireParticipant, asyncHandler(async (req, res) => {
   const sessions = await ResearchSession.find({ participant_id: req.participant._id }).sort({ started_at: -1 }).lean();
   res.json(sessions.map((item) => ({
@@ -719,6 +814,7 @@ router.post("/questionnaires", requireParticipant, asyncHandler(async (req, res)
     updated_at: now
   };
   await ResearchSession.updateOne({ _id: session._id }, { $set: { questionnaire, updated_at: now } });
+  await upsertQuestionnaireResponse(session, questionnaire);
   await createNotification("questionnaire_submitted", "Questionnaire submitted", `Questionnaire response saved for ${session.session_code || req.body.session_id}.`, session._id);
   res.status(201).json({ status: "saved", session_id: req.body.session_id, score, submitted_at: now });
 }));
@@ -759,13 +855,13 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res) => {
     ResearchSession.countDocuments({ doctor_assessment: { $exists: true } }),
     Participant.countDocuments({ ...participantFilter, consent_completed: true }),
     ResearchSession.countDocuments({ physiological: { $exists: true } }),
-    ResearchSession.countDocuments({ questionnaire: { $exists: true } }),
-    ResearchSession.find({}).sort({ started_at: -1 }).limit(8).lean(),
+    QuestionnaireResponse.countDocuments({}),
+    ResearchSession.find({}).sort({ started_at: -1 }).lean(),
     ResearchSession.find({}).lean(),
     ResearchSession.find({ status: "completed" }).lean()
   ]);
   const physiological = allSessions.map((item) => item.physiological).filter(Boolean);
-  const questionnaires = allSessions.map((item) => item.questionnaire).filter(Boolean);
+  const questionnaires = allSessions.map((item) => item.questionnaire).filter(hasFilledQuestionnaireAnswers);
   const required = participants * 2;
   const byParticipant = new Map();
   for (const session of completedSessions) {
@@ -821,7 +917,7 @@ router.get("/dashboard/participants", asyncHandler(async (req, res) => {
       { $or: ["participant_code", "name", "email"].map((field) => ({ [field]: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" } })) }
     ]
   } : participantFilter;
-  const people = await Participant.find(query).sort({ created_at: -1 }).limit(100).lean();
+  const people = await Participant.find(query).sort({ created_at: -1 }).lean();
   const rows = [];
   for (const person of people) {
     const [sessions, completed, latest] = await Promise.all([
@@ -888,7 +984,7 @@ router.get("/dashboard/participants/:participantId", asyncHandler(async (req, re
 }));
 
 router.get("/dashboard/sessions", asyncHandler(async (_req, res) => {
-  const sessions = await ResearchSession.find({}).sort({ started_at: -1 }).limit(500).lean();
+  const sessions = await ResearchSession.find({}).sort({ started_at: -1 }).lean();
   res.json(await Promise.all(sessions.map(publicSessionRow)));
 }));
 
@@ -1000,7 +1096,7 @@ router.get("/dashboard/exports/:filename", asyncHandler(async (req, res) => {
 router.get("/dashboard/physiological", asyncHandler(async (req, res) => {
   const query = { physiological: { $exists: true } };
   if (req.query.quality) query["physiological.signal_quality"] = req.query.quality;
-  const sessions = await ResearchSession.find(query).sort({ "physiological.recorded_at": -1 }).limit(500).lean();
+  const sessions = await ResearchSession.find(query).sort({ "physiological.recorded_at": -1 }).lean();
   const people = await Participant.find({ _id: { $in: sessions.map((item) => item.participant_id).filter(Boolean) } }).lean();
   const map = new Map(people.map((item) => [String(item._id), item]));
   const search = String(req.query.search || "").toLowerCase().trim();
@@ -1043,10 +1139,10 @@ router.get("/dashboard/physiological", asyncHandler(async (req, res) => {
 }));
 
 router.get("/dashboard/questionnaires", asyncHandler(async (req, res) => {
-  const sessions = await ResearchSession.find({ questionnaire: { $exists: true } }).sort({ "questionnaire.submitted_at": -1 }).limit(500).lean();
+  const sessions = await ResearchSession.find({ questionnaire: { $exists: true } }).sort({ "questionnaire.submitted_at": -1 }).lean();
   const people = await Participant.find({ _id: { $in: sessions.map((item) => item.participant_id).filter(Boolean) } }).lean();
   const map = new Map(people.map((item) => [String(item._id), item]));
-  const rows = sessions.map((session) => {
+  const rows = sessions.filter((session) => hasFilledQuestionnaireAnswers(session.questionnaire)).map((session) => {
     const item = session.questionnaire || {};
     const answers = item.answers || {};
     const person = map.get(String(session.participant_id)) || {};
@@ -1072,7 +1168,7 @@ router.get("/dashboard/questionnaires", asyncHandler(async (req, res) => {
 }));
 
 router.get("/dashboard/doctor", asyncHandler(async (req, res) => {
-  const sessions = await ResearchSession.find({}).sort({ started_at: -1 }).limit(500).lean();
+  const sessions = await ResearchSession.find({}).sort({ started_at: -1 }).lean();
   const people = await Participant.find({ _id: { $in: sessions.map((item) => item.participant_id).filter(Boolean) } }).lean();
   const map = new Map(people.map((item) => [String(item._id), item]));
   const status = req.query.status;

@@ -69,13 +69,13 @@ export default function Doctor() {
   const pending = records.filter((r) => r.status === "pending").length;
 
   return (
-    <div>
+    <div className="min-w-0">
       <div className="mb-5">
         <h1 className="text-lg font-semibold text-foreground">Doctor Assessments</h1>
         <p className="text-xs text-muted-foreground mt-0.5">Clinical stress labels and physician notes</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 mb-5">
+      <div className="grid grid-cols-1 gap-3 mb-5 sm:grid-cols-3">
         <StatCard label="Total Assessments" value={records.length} icon={Stethoscope} iconColor="text-indigo-600" />
         <StatCard label="Completed" value={completed} icon={CheckCircle2} iconColor="text-emerald-600" />
         <StatCard label="Pending" value={pending} icon={Clock} iconColor="text-amber-600" />
@@ -88,17 +88,17 @@ export default function Doctor() {
         </div>
       )}
 
-      <div className="flex items-center gap-3 mb-4">
-        <div className="relative">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="relative min-w-0 sm:w-60">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
-            className="pl-8 pr-3 py-1.5 text-xs bg-card border border-border rounded w-52 focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className="w-full rounded border border-border bg-card py-1.5 pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
             placeholder="Search participant or session…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <select className="text-xs bg-card border border-border rounded px-2.5 py-1.5" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+        <select className="rounded border border-border bg-card px-2.5 py-1.5 text-xs sm:w-auto" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="all">All Statuses</option>
           <option value="completed">Completed</option>
           <option value="pending">Pending</option>
@@ -112,8 +112,8 @@ export default function Doctor() {
           Loading…
         </div>
       ) : (
-        <div className="bg-card rounded border border-border shadow-sm overflow-x-auto">
-          <table className="w-full text-xs">
+        <div className="min-w-0 overflow-x-auto rounded border border-border bg-card shadow-sm">
+          <table className="min-w-[900px] w-full text-xs">
             <thead>
               <tr className="bg-muted/60 border-b border-border">
                 {["Participant", "Session", "Condition", "Clinical Stress Label", "Comments", "Recommendation", "Status", "Actions"].map((h) => (
@@ -157,7 +157,7 @@ export default function Doctor() {
       {editing && (
         <div className="fixed inset-0 z-40 flex justify-end">
           <div className="absolute inset-0 bg-black/25" onClick={() => setEditing(null)} />
-          <aside className="relative z-10 h-full w-[420px] overflow-y-auto border-l border-border bg-card shadow-2xl">
+          <aside className="relative z-10 h-full w-full max-w-[420px] overflow-y-auto border-l border-border bg-card shadow-2xl">
             <div className="sticky top-0 flex items-center justify-between border-b border-border bg-card px-5 py-4">
               <div>
                 <h2 className="text-sm font-semibold text-foreground">Doctor assessment</h2>

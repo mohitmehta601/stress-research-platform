@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
-  AlertTriangle,
   CheckCircle2,
   FlaskConical,
   Heart,
@@ -13,15 +12,11 @@ import {
   Zap,
 } from "lucide-react";
 import {
-  Bar,
-  BarChart,
   Cell,
   Pie,
   PieChart,
   ResponsiveContainer,
   Tooltip,
-  XAxis,
-  YAxis,
 } from "recharts";
 
 import { StatCard } from "../components/StatCard";
@@ -56,6 +51,7 @@ function PageHeader() {
 
       <div className="font-mono text-xs text-muted-foreground">
         {new Date().toLocaleDateString("en-GB", {
+          timeZone: "Asia/Kolkata",
           weekday: "long",
           year: "numeric",
           month: "long",
@@ -133,41 +129,6 @@ export default function Dashboard() {
   const dashboardData = useMemo(() => {
     if (!summary) return null;
 
-    const statusCounts: Record<Session["status"], number> = {
-      completed: 0,
-      "in-progress": 0,
-      "pending-review": 0,
-      incomplete: 0,
-    };
-
-    sessions.forEach((session) => {
-      statusCounts[session.status] =
-        (statusCounts[session.status] ?? 0) + 1;
-    });
-
-    const statusData = [
-      {
-        name: "Completed",
-        value: statusCounts.completed,
-        fill: "#10b981",
-      },
-      {
-        name: "In Progress",
-        value: statusCounts["in-progress"],
-        fill: "#3b82f6",
-      },
-      {
-        name: "Pending Review",
-        value: statusCounts["pending-review"],
-        fill: "#f59e0b",
-      },
-      {
-        name: "Incomplete",
-        value: statusCounts.incomplete,
-        fill: "#ef4444",
-      },
-    ];
-
     const relaxedSessions = sessions.filter(
       (session) => session.condition === "relaxed",
     ).length;
@@ -189,35 +150,22 @@ export default function Dashboard() {
       },
     ];
 
-    const missingDataSessions = sessions.filter(
-      (session) =>
-        !session.ecgCollected ||
-        !session.questionnaireCompleted,
-    );
-
     const completeDataSessions = sessions.filter(
       (session) =>
         session.ecgCollected &&
         session.questionnaireCompleted,
     ).length;
 
-    const recentSessions = sessions.slice(0, 8);
-
-    const hasStatusData = statusData.some(
-      (item) => item.value > 0,
-    );
+    const sessionRows = sessions;
 
     const hasConditionData = conditionData.some(
       (item) => item.value > 0,
     );
 
     return {
-      statusData,
       conditionData,
-      missingDataSessions,
       completeDataSessions,
-      recentSessions,
-      hasStatusData,
+      sessionRows,
       hasConditionData,
     };
   }, [sessions, summary]);
@@ -254,12 +202,9 @@ export default function Dashboard() {
   }
 
   const {
-    statusData,
     conditionData,
-    missingDataSessions,
     completeDataSessions,
-    recentSessions,
-    hasStatusData,
+    sessionRows,
     hasConditionData,
   } = dashboardData;
 
@@ -430,69 +375,8 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* Research distributions */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <section className="rounded border border-border bg-card p-4 shadow-sm lg:col-span-2">
-          <div className="mb-3">
-            <h2 className="text-xs font-semibold text-foreground">
-              Session Status Distribution
-            </h2>
-
-            <p className="mt-0.5 text-[10px] text-muted-foreground">
-              Current processing and completion state of research
-              sessions.
-            </p>
-          </div>
-
-          {hasStatusData ? (
-            <ResponsiveContainer width="100%" height={190}>
-              <BarChart
-                data={statusData}
-                layout="vertical"
-                margin={{
-                  top: 5,
-                  right: 25,
-                  bottom: 5,
-                  left: 10,
-                }}
-              >
-                <XAxis
-                  type="number"
-                  allowDecimals={false}
-                  tick={{ fontSize: 11 }}
-                />
-
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  width={105}
-                  tick={{ fontSize: 11 }}
-                />
-
-                <Tooltip
-                  contentStyle={{ fontSize: 12 }}
-                  cursor={{ fill: "rgba(148, 163, 184, 0.08)" }}
-                />
-
-                <Bar
-                  dataKey="value"
-                  name="Sessions"
-                  radius={[0, 3, 3, 0]}
-                >
-                  {statusData.map((entry) => (
-                    <Cell
-                      key={entry.name}
-                      fill={entry.fill}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <EmptyChart message="No session data available." />
-          )}
-        </section>
-
+      {/* Condition and recent sessions */}
+      <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)]">
         <section className="rounded border border-border bg-card p-4 shadow-sm">
           <div className="mb-3">
             <h2 className="text-xs font-semibold text-foreground">
@@ -540,19 +424,16 @@ export default function Dashboard() {
             <EmptyChart message="No condition data available." />
           )}
         </section>
-      </div>
 
-      {/* Sessions and data-quality review */}
-      <div className="grid gap-4 xl:grid-cols-3">
-        <section className="overflow-hidden rounded border border-border bg-card shadow-sm xl:col-span-2">
+        <section className="overflow-hidden rounded border border-border bg-card shadow-sm">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
               <h2 className="text-xs font-semibold text-foreground">
-                Recent Research Sessions
+                Research Sessions
               </h2>
 
               <p className="mt-0.5 text-[10px] text-muted-foreground">
-                Latest recorded participant sessions.
+                All recorded participant sessions.
               </p>
             </div>
 
@@ -583,7 +464,7 @@ export default function Dashboard() {
               </thead>
 
               <tbody>
-                {recentSessions.length === 0 ? (
+                {sessionRows.length === 0 ? (
                   <tr>
                     <td
                       colSpan={5}
@@ -593,7 +474,7 @@ export default function Dashboard() {
                     </td>
                   </tr>
                 ) : (
-                  recentSessions.map((session, index) => (
+                  sessionRows.map((session, index) => (
                     <tr
                       key={session.id}
                       className={`border-b border-border/50 last:border-b-0 hover:bg-muted/40 ${
@@ -626,84 +507,6 @@ export default function Dashboard() {
                 )}
               </tbody>
             </table>
-          </div>
-        </section>
-
-        <section className="rounded border border-border bg-card shadow-sm">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div className="flex items-center gap-2">
-              <AlertTriangle
-                size={14}
-                className="text-amber-500"
-              />
-
-              <div>
-                <h2 className="text-xs font-semibold text-foreground">
-                  Data Quality Alerts
-                </h2>
-
-                <p className="mt-0.5 text-[10px] text-muted-foreground">
-                  Sessions with incomplete research records.
-                </p>
-              </div>
-            </div>
-
-            {missingDataSessions.length > 0 && (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 font-mono text-[10px] font-semibold text-amber-700">
-                {missingDataSessions.length}
-              </span>
-            )}
-          </div>
-
-          <div className="max-h-[330px] space-y-2 overflow-y-auto p-3">
-            {missingDataSessions.length === 0 ? (
-              <div className="py-10 text-center">
-                <CheckCircle2
-                  size={20}
-                  className="mx-auto text-emerald-500"
-                />
-
-                <p className="mt-2 text-xs font-medium text-foreground">
-                  No data quality issues
-                </p>
-
-                <p className="mt-1 text-[10px] text-muted-foreground">
-                  All sessions contain sensor and questionnaire
-                  data.
-                </p>
-              </div>
-            ) : (
-              missingDataSessions.map((session) => (
-                <div
-                  key={session.id}
-                  className="rounded border border-amber-200 bg-amber-50 p-3"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="font-mono text-[10px] font-semibold text-amber-900">
-                        {session.id}
-                      </div>
-
-                      <div className="mt-0.5 font-mono text-[10px] text-amber-700">
-                        Participant: {session.participantId}
-                      </div>
-                    </div>
-
-                    {conditionBadge(session.condition)}
-                  </div>
-
-                  <div className="mt-2 space-y-1 text-[10px] text-amber-800">
-                    {!session.ecgCollected && (
-                      <div>• Physiological sensor data missing</div>
-                    )}
-
-                    {!session.questionnaireCompleted && (
-                      <div>• Questionnaire data incomplete</div>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
           </div>
         </section>
       </div>

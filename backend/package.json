@@ -10,6 +10,8 @@
     "start": "node src/server.js",
     "create:super-admin": "node create-super-admin.js",
     "seed:super-admins": "node seed-super-admins.js",
+    "backfill:questionnaires": "node scripts/backfill-questionnaire-responses.js",
+    "cleanup:incomplete-sessions": "node scripts/cleanup-incomplete-sessions.js",
     "sync:mongodb": "node sync-mongo-atlas.js"
   },
   "dependencies": {

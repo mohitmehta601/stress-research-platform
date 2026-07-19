@@ -79,15 +79,15 @@ export async function physiologicalRows() {
 }
 
 export async function questionnaireRows() {
-  const sessions = await ResearchSession.find({ questionnaire: { $exists: true } }).sort({ "questionnaire.submitted_at": -1 }).lean();
-  return sessions.map((session) => ({
-    ParticipantID: String(session.participant_id || ""),
-    SessionID: session.session_code || String(session._id || ""),
-    Condition: session.condition || "",
-    QuestionnaireKey: session.questionnaire?.questionnaire_key || "",
-    Score: session.questionnaire?.score || "",
-    SubmittedAt: session.questionnaire?.submitted_at || "",
-    Answers: session.questionnaire?.answers || {}
+  const responses = await QuestionnaireResponse.find({}).sort({ submitted_at: -1 }).lean();
+  return responses.map((response) => ({
+    ParticipantID: response.participant_code || String(response.participant_id || ""),
+    SessionID: response.session_code || String(response.session_id || ""),
+    Condition: response.condition || "",
+    QuestionnaireKey: response.questionnaire_key || "",
+    Score: response.score || "",
+    SubmittedAt: response.submitted_at || "",
+    Answers: response.answers || {}
   }));
 }
 

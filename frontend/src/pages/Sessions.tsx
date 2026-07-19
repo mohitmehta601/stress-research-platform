@@ -62,8 +62,12 @@ function numberOrNull(value: string): number | null {
 
 function toIso(date: string, time: string): string | null {
   if (!date) return null;
-  const parsed = new Date(`${date}T${time || "00:00"}:00`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour = 0, minute = 0] = (time || "00:00").split(":").map(Number);
+  if (![year, month, day, hour, minute].every(Number.isFinite)) return null;
+  const istOffsetMs = 5.5 * 60 * 60 * 1000;
+  const utcTime = Date.UTC(year, month - 1, day, hour, minute) - istOffsetMs;
+  return new Date(utcTime).toISOString();
 }
 
 function formFromSession(session?: Session | null): SessionForm {
@@ -161,7 +165,7 @@ function SessionDrawer({ session: s, onClose, onEdit }: { session: Session; onCl
   return (
     <div className="fixed inset-0 z-30 flex justify-end">
       <div className="absolute inset-0 bg-black/20" onClick={onClose} />
-      <aside className="relative z-10 h-full w-[400px] overflow-y-auto border-l border-border bg-card shadow-xl">
+      <aside className="relative z-10 h-full w-full max-w-[400px] overflow-y-auto border-l border-border bg-card shadow-xl">
         <div className="sticky top-0 flex items-center justify-between border-b border-border bg-card px-5 py-4">
           <div>
             <div className="font-mono text-sm font-semibold text-foreground">{s.id}</div>
@@ -285,7 +289,7 @@ function SessionEditor({
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/25" onClick={onClose} />
-      <aside className="relative z-10 h-full w-[540px] overflow-y-auto border-l border-border bg-card shadow-2xl">
+      <aside className="relative z-10 h-full w-full max-w-[540px] overflow-y-auto border-l border-border bg-card shadow-2xl">
         <div className="sticky top-0 flex items-center justify-between border-b border-border bg-card px-5 py-4">
           <div>
             <h2 className="text-sm font-semibold text-foreground">{isEdit ? "Edit research session" : "Add research session"}</h2>
@@ -442,9 +446,9 @@ export default function Sessions() {
   }
 
   return (
-    <div>
-      <div className="mb-5 flex items-center justify-between">
-        <div>
+    <div className="min-w-0">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-lg font-semibold text-foreground">Research Sessions</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {sessions.length} sessions across {[...new Set(sessions.map((s) => s.participantId))].length} participants · manual entries save to MongoDB
@@ -452,18 +456,18 @@ export default function Sessions() {
         </div>
         <button
           onClick={() => setEditing(null)}
-          className="flex items-center gap-2 rounded bg-[#1d4ed8] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1e40af]"
+          className="flex w-full items-center justify-center gap-2 rounded bg-[#1d4ed8] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1e40af] sm:w-auto"
         >
           <Plus size={14} />
           Add Session
         </button>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+        <div className="relative min-w-0 sm:w-60">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
-            className="w-52 rounded border border-border bg-card py-1.5 pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className="w-full rounded border border-border bg-card py-1.5 pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
             placeholder="Search session or participant..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -490,8 +494,8 @@ export default function Sessions() {
           Loading...
         </div>
       ) : (
-        <div className="overflow-x-auto rounded border border-border bg-card shadow-sm">
-          <table className="w-full text-xs">
+        <div className="min-w-0 overflow-x-auto rounded border border-border bg-card shadow-sm">
+          <table className="min-w-[1120px] w-full text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/60">
                 {["Session ID", "Participant", "Condition", "Date/Time", "ECG", "HRV", "EDA", "Temp", "Questionnaire", "Doctor", "Quality", "Status", "Actions"].map((h) => (

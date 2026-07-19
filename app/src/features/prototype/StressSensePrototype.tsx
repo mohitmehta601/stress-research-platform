@@ -19,9 +19,9 @@ const RED = "#DC2626"
 const ORANGE = "#EA580C"
 const TEAL = "#0D9488"
 
-const currentTime = () => new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })
+const IST_TIME_ZONE = "Asia/Kolkata"
 const parseBackendDate = (value: string) => new Date(/\dT\d/.test(value) && !/[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? `${value}Z` : value)
-const formatBackendDateTime = (value: string) => parseBackendDate(value).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+const formatBackendDateTime = (value: string) => `${parseBackendDate(value).toLocaleString("en-GB", { timeZone: IST_TIME_ZONE, day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} IST`
 
 // â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type Screen =
@@ -135,7 +135,13 @@ function NavBar({ title, subtitle, onBack, right, dark = false }: {
   title: string; subtitle?: string; onBack?: () => void; right?: React.ReactNode; dark?: boolean
 }) {
   return (
-    <div style={{ backgroundColor: dark ? NAVY : NAVY }} className="flex items-center gap-3 px-4 py-3 flex-shrink-0">
+    <div
+      style={{
+        backgroundColor: dark ? NAVY : NAVY,
+        paddingTop: "calc(env(safe-area-inset-top, 0px) + 0.75rem)",
+      }}
+      className="flex items-center gap-3 px-4 pb-3 flex-shrink-0"
+    >
       {onBack
         ? <button onClick={onBack} className="text-white/90 hover:text-white p-0.5 -ml-0.5 flex-shrink-0"><ArrowLeft size={20} /></button>
         : <div className="w-5 flex-shrink-0" />}
@@ -156,7 +162,10 @@ function BottomTabs({ active, nav }: { active: Screen; nav: Nav }) {
     { id: "profile-view" as Screen,           Icon: User,     label: "Profile"   },
   ]
   return (
-    <div className="flex border-t border-gray-100 bg-white flex-shrink-0">
+    <div
+      className="flex border-t border-gray-100 bg-white flex-shrink-0"
+      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+    >
       {tabs.map(({ id, Icon, label }) => (
         <button key={id} onClick={() => nav(id)} className="flex-1 flex flex-col items-center pt-2 pb-3 gap-0.5">
           <Icon size={20} style={{ color: active === id ? BLUE : "#9CA3AF" }} />
@@ -175,7 +184,10 @@ function ResearcherTabs({ active, nav }: { active: Screen; nav: Nav }) {
     { id: "export" as Screen,                   Icon: Download,  label: "Export"       },
   ]
   return (
-    <div className="flex border-t border-gray-100 bg-white flex-shrink-0">
+    <div
+      className="flex border-t border-gray-100 bg-white flex-shrink-0"
+      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+    >
       {tabs.map(({ id, Icon, label }) => (
         <button key={id} onClick={() => nav(id)} className="flex-1 flex flex-col items-center pt-2 pb-3 gap-0.5">
           <Icon size={20} style={{ color: active === id ? BLUE : "#9CA3AF" }} />
@@ -279,7 +291,7 @@ function DataBit({ ok }: { ok: boolean | null }) {
 // â”€â”€â”€ Scroll wrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ScrollArea({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`flex-1 overflow-y-auto ${className}`} style={{ scrollbarWidth: "none" }}>
+    <div className={`flex-1 min-w-0 overflow-y-auto overscroll-contain ${className}`} style={{ scrollbarWidth: "none" }}>
       {children}
     </div>
   )
@@ -596,9 +608,9 @@ function LoginScreen({ nav, onLogin }: { nav: Nav; onLogin: (role: "participant"
   return (
     <div className="flex flex-col h-full bg-[#F0F4F8]">
       <NavBar title="Login" onBack={() => nav("splash")} />
-      <ScrollArea className="px-4 py-8">
+      <ScrollArea className="px-[clamp(1rem,5vw,1.5rem)] py-[clamp(1.25rem,4.5svh,2rem)]">
         {/* Brand mark */}
-        <div className="flex flex-col items-center mb-8">
+        <div className="flex flex-col items-center mb-[clamp(1.5rem,5svh,2rem)]">
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3 shadow" style={{ backgroundColor: BLUE }}>
             <Brain size={28} className="text-white" />
           </div>
@@ -1220,10 +1232,18 @@ function StressTaskSelectScreen({ nav }: { nav: Nav }) {
 
 // SCREEN 11 â€” Stress Task
 function StressTaskScreen({ nav, task = 0 }: { nav: Nav; task?: number }) {
-  const [timeLeft, setTimeLeft] = useState(45)
-  const [number, setNumber] = useState(812)
+  const TASK_DURATION = 60
+  const MEMORY_PREVIEW_SECONDS = 4
+  const [timeLeft, setTimeLeft] = useState(TASK_DURATION)
+  const [number, setNumber] = useState(1000)
+  const [answer, setAnswer] = useState("")
+  const [solved, setSolved] = useState(0)
+  const [attempts, setAttempts] = useState(0)
+  const [feedback, setFeedback] = useState<"correct" | "incorrect" | null>(null)
   const [promptIndex, setPromptIndex] = useState(0)
+  const [memoryVisible, setMemoryVisible] = useState(task === 2)
   const [running, setRunning] = useState(true)
+  const savedRef = useRef(false)
   const taskData = STRESS_TASKS[task] ?? STRESS_TASKS[0]
   const stroopItems = [
     { word: "BLUE", ink: ORANGE, answer: "Orange" },
@@ -1231,43 +1251,334 @@ function StressTaskScreen({ nav, task = 0 }: { nav: Nav; task?: number }) {
     { word: "GREEN", ink: RED, answer: "Red" },
     { word: "ORANGE", ink: GREEN, answer: "Green" },
   ]
+  const stroopChoices = [
+    ["Orange", "Blue", "Green"],
+    ["Blue", "Red", "Orange"],
+    ["Red", "Green", "Blue"],
+    ["Green", "Orange", "Red"],
+  ]
+  const stroopColorMap: Record<string, string> = {
+    Orange: ORANGE,
+    Blue: BLUE,
+    Green: GREEN,
+    Red: RED,
+  }
   const memoryItems = ["729418", "3849207", "65180724", "942761305"]
-  const pressureItems = ["18 + 27 - 9", "64 - 18 + 7", "9 × 6 - 11", "120 ÷ 5 + 19"]
+  const pressureItems = [
+    { problem: "18 + 27 - 9", answer: 36 },
+    { problem: "64 - 18 + 7", answer: 53 },
+    { problem: "9 × 6 - 11", answer: 43 },
+    { problem: "120 ÷ 5 + 19", answer: 43 },
+  ]
   const activeStroop = stroopItems[promptIndex % stroopItems.length]
+  const activeStroopChoices = useMemo(() => {
+    const choices = [...stroopChoices[promptIndex % stroopChoices.length]]
+    for (let i = choices.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1))
+      const current = choices[i]
+      choices[i] = choices[j]
+      choices[j] = current
+    }
+    return choices
+  }, [promptIndex])
   const activeMemory = memoryItems[promptIndex % memoryItems.length]
   const activePressure = pressureItems[promptIndex % pressureItems.length]
-  const handleTaskAction = () => {
-    if (task === 0) setNumber(n => n - 17)
-    else setPromptIndex(i => i + 1)
+  const expectedAnswer = task === 0 ? number - 17 : null
+  const elapsed = TASK_DURATION - timeLeft
+  const accuracy = attempts > 0 ? Math.round((solved / attempts) * 100) : 0
+  const storageKey = `stresssense_stress_task_${api.activeSessionId ?? api.activeSessionCode ?? "current"}`
+  const saveResult = (status: "completed" | "gave_up" = "completed") => {
+    if (savedRef.current) return
+    const result = {
+      task: taskData.title,
+      status,
+      solved,
+      attempts,
+      accuracy,
+      elapsed_seconds: elapsed,
+      duration_seconds: TASK_DURATION,
+      remaining_seconds: timeLeft,
+      completed_at: new Date().toISOString(),
+    }
+    localStorage.setItem(storageKey, JSON.stringify(result))
+    localStorage.setItem("stresssense_stress_task_solved", String(solved))
+    localStorage.setItem("stresssense_stress_task_attempts", String(attempts))
+    localStorage.setItem("stresssense_stress_task_elapsed", String(elapsed))
+    savedRef.current = true
+  }
+  const finishTask = (status: "completed" | "gave_up" = "completed") => {
+    saveResult(status)
+    nav("stress-recording")
+  }
+  const handleTaskAction = (selectedOption?: string) => {
+    if (!running || timeLeft === 0) return
+    if (task === 0) {
+      const parsed = Number(answer.trim())
+      if (!answer.trim() || Number.isNaN(parsed)) return
+      const correct = parsed === expectedAnswer
+      setAttempts(count => count + 1)
+      setFeedback(correct ? "correct" : "incorrect")
+      if (correct) {
+        setSolved(count => count + 1)
+        setNumber(expectedAnswer ?? number)
+      }
+      setAnswer("")
+      return
+    }
+    if (task === 1) {
+      if (!selectedOption) return
+      const correct = selectedOption === activeStroop.answer
+      setAttempts(count => count + 1)
+      setFeedback(correct ? "correct" : "incorrect")
+      if (correct) setSolved(count => count + 1)
+      setPromptIndex(i => i + 1)
+      return
+    }
+    if (task === 2) {
+      if (memoryVisible || !answer.trim()) return
+      const correct = answer.trim() === activeMemory
+      setAttempts(count => count + 1)
+      setFeedback(correct ? "correct" : "incorrect")
+      if (correct) setSolved(count => count + 1)
+      setAnswer("")
+      setPromptIndex(i => i + 1)
+      return
+    }
+    if (task === 3) {
+      const parsed = Number(answer.trim())
+      if (!answer.trim() || Number.isNaN(parsed)) return
+      const correct = parsed === activePressure.answer
+      setAttempts(count => count + 1)
+      setFeedback(correct ? "correct" : "incorrect")
+      if (correct) setSolved(count => count + 1)
+      setAnswer("")
+      setPromptIndex(i => i + 1)
+      return
+    }
+    setAttempts(count => count + 1)
+    setSolved(count => count + 1)
+    setPromptIndex(i => i + 1)
   }
   useEffect(() => {
     if (!running) return
     const id = setInterval(() => setTimeLeft(t => t > 0 ? t - 1 : 0), 1000)
     return () => clearInterval(id)
   }, [running])
+  useEffect(() => {
+    if (timeLeft === 0) {
+      setRunning(false)
+      saveResult("completed")
+    }
+  }, [timeLeft])
+  useEffect(() => {
+    if (task !== 2) return
+    setMemoryVisible(true)
+    setAnswer("")
+    const id = window.setTimeout(() => setMemoryVisible(false), MEMORY_PREVIEW_SECONDS * 1000)
+    return () => window.clearTimeout(id)
+  }, [task, promptIndex])
   return (
-    <div className="flex flex-col h-full bg-[#F0F4F8]">
+    <div className="flex flex-col h-full bg-[#EEF2F7]">
       <NavBar title="Stress Session" subtitle={STRESS_TASKS[task]?.title ?? "Mental Arithmetic"} onBack={() => nav("stress-task-select")} />
-      <ScrollArea className="px-4 py-5 space-y-4">
+      <ScrollArea className="px-4 py-4 space-y-3">
         {/* Instruction */}
-        <Card className="p-4" style={{ borderLeft: `4px solid ${ORANGE}` }}>
-          <p className="text-sm font-semibold text-gray-800 leading-relaxed">{taskData.instruction}</p>
+        <Card className="p-4 overflow-hidden" style={{ borderLeft: `4px solid ${ORANGE}` }}>
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#FFF7ED" }}>
+              <Brain size={18} style={{ color: ORANGE }} />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1">Timed Challenge</p>
+              <p className="text-sm font-semibold text-gray-800 leading-relaxed">{taskData.instruction}</p>
+            </div>
+          </div>
         </Card>
 
         {/* Number display */}
-        <Card className="p-6 flex flex-col items-center">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">{taskData.title}</p>
-          {task === 0 && <p className="text-6xl font-black text-gray-900 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: ORANGE }}>{number}</p>}
-          {task === 1 && (
-            <div className="text-center">
-              <p className="text-5xl font-black tracking-widest" style={{ color: activeStroop.ink }}>{activeStroop.word}</p>
-              <p className="text-xs text-gray-400 mt-2">Correct response: ink color = {activeStroop.answer}</p>
+        <Card className="p-5 flex flex-col items-center">
+          <div className="w-full flex items-center justify-between mb-3">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{taskData.title}</p>
+            <span className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ backgroundColor: "#FFF7ED", color: ORANGE }}>
+              {solved} solved
+            </span>
+          </div>
+          {task === 0 && (
+            <div className="w-full text-center">
+              <p className="text-xs font-semibold text-gray-400 mb-1">Current number</p>
+              <p className="text-6xl font-black text-gray-900 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: ORANGE }}>{number}</p>
+              <p className="text-sm font-semibold text-gray-600 mt-2">Enter {number} - 17</p>
             </div>
           )}
-          {task === 2 && <p className="text-5xl font-black tracking-widest tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: ORANGE }}>{activeMemory}</p>}
-          {task === 3 && <p className="text-4xl font-black tabular-nums text-center" style={{ fontFamily: "'JetBrains Mono', monospace", color: ORANGE }}>{activePressure}</p>}
-          <button onClick={handleTaskAction} className="mt-4 px-8 py-2.5 rounded-xl text-white font-semibold text-sm" style={{ backgroundColor: ORANGE }}>{taskData.button}</button>
+          {task === 1 && (
+            <div className="w-full text-center">
+              <p className="text-xs font-semibold text-gray-400 mb-1">Select the ink color</p>
+              <p className="text-5xl font-black tracking-widest" style={{ color: activeStroop.ink }}>{activeStroop.word}</p>
+              <p className="text-sm font-semibold text-gray-600 mt-2">What color is the word printed in?</p>
+            </div>
+          )}
+          {task === 2 && (
+            <div className="w-full text-center">
+              <p className="text-xs font-semibold text-gray-400 mb-1">{memoryVisible ? "Memorize this sequence" : "Recall the sequence"}</p>
+              {memoryVisible ? (
+                <>
+                  <p className="text-5xl font-black tracking-widest tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: ORANGE }}>{activeMemory}</p>
+                  <p className="text-sm font-semibold text-gray-600 mt-2">The number will hide after {MEMORY_PREVIEW_SECONDS} seconds.</p>
+                </>
+              ) : (
+                <>
+                  <div className="h-20 rounded-2xl bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center">
+                    <EyeOff size={24} className="text-gray-300" />
+                  </div>
+                  <p className="text-sm font-semibold text-gray-600 mt-2">Type the number you remember.</p>
+                </>
+              )}
+            </div>
+          )}
+          {task === 3 && (
+            <div className="w-full text-center">
+              <p className="text-xs font-semibold text-gray-400 mb-1">Solve this problem</p>
+              <p className="text-4xl font-black tabular-nums text-center" style={{ fontFamily: "'JetBrains Mono', monospace", color: ORANGE }}>{activePressure.problem}</p>
+              <p className="text-sm font-semibold text-gray-600 mt-2">Type the answer as fast as possible.</p>
+            </div>
+          )}
+          {task === 0 ? (
+            <div className="w-full mt-4 space-y-2">
+              <div className="flex gap-2">
+                <input
+                  value={answer}
+                  onChange={e => {
+                    setAnswer(e.target.value.replace(/[^\d-]/g, ""))
+                    setFeedback(null)
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && running && timeLeft > 0) handleTaskAction()
+                  }}
+                  inputMode="numeric"
+                  placeholder="Type answer"
+                  disabled={!running || timeLeft === 0}
+                  className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-center text-xl font-bold tabular-nums text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 disabled:opacity-60"
+                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                />
+                <button
+                  onClick={handleTaskAction}
+                  disabled={!running || timeLeft === 0 || !answer.trim()}
+                  className="w-24 rounded-xl text-white font-bold text-sm disabled:opacity-50"
+                  style={{ backgroundColor: ORANGE }}
+                >
+                  Submit
+                </button>
+              </div>
+              <div className="min-h-5 text-center">
+                {feedback === "correct" && <p className="text-xs font-bold" style={{ color: GREEN }}>Correct. Next number loaded.</p>}
+                {feedback === "incorrect" && <p className="text-xs font-bold" style={{ color: RED }}>Incorrect. Try the same step again.</p>}
+                {timeLeft === 0 && <p className="text-xs font-bold" style={{ color: RED }}>Time is up. Your score has been saved.</p>}
+              </div>
+            </div>
+          ) : task === 1 ? (
+            <div className="w-full mt-4 space-y-2">
+              <div className="grid grid-cols-3 gap-2">
+                {activeStroopChoices.map(choice => (
+                  <button
+                    key={choice}
+                    onClick={() => handleTaskAction(choice)}
+                    disabled={!running || timeLeft === 0}
+                    className="min-h-12 rounded-xl border-2 bg-white px-2 text-sm font-bold disabled:opacity-50"
+                    style={{ borderColor: `${stroopColorMap[choice]}55`, color: stroopColorMap[choice] }}
+                  >
+                    {choice}
+                  </button>
+                ))}
+              </div>
+              <div className="min-h-5 text-center">
+                {feedback === "correct" && <p className="text-xs font-bold" style={{ color: GREEN }}>Correct. Next color item loaded.</p>}
+                {feedback === "incorrect" && <p className="text-xs font-bold" style={{ color: RED }}>Incorrect. Next color item loaded.</p>}
+                {timeLeft === 0 && <p className="text-xs font-bold" style={{ color: RED }}>Time is up. Your score has been saved.</p>}
+              </div>
+            </div>
+          ) : task === 2 ? (
+            <div className="w-full mt-4 space-y-2">
+              <div className="flex gap-2">
+                <input
+                  value={answer}
+                  onChange={e => {
+                    setAnswer(e.target.value.replace(/\D/g, ""))
+                    setFeedback(null)
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && running && timeLeft > 0 && !memoryVisible) handleTaskAction()
+                  }}
+                  inputMode="numeric"
+                  placeholder={memoryVisible ? "Watch first" : "Type sequence"}
+                  disabled={!running || timeLeft === 0 || memoryVisible}
+                  className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-center text-xl font-bold tabular-nums text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 disabled:opacity-60"
+                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                />
+                <button
+                  onClick={handleTaskAction}
+                  disabled={!running || timeLeft === 0 || memoryVisible || !answer.trim()}
+                  className="w-24 rounded-xl text-white font-bold text-sm disabled:opacity-50"
+                  style={{ backgroundColor: ORANGE }}
+                >
+                  Submit
+                </button>
+              </div>
+              <div className="min-h-5 text-center">
+                {memoryVisible && <p className="text-xs font-bold text-gray-400">Memorize now. Input unlocks next.</p>}
+                {feedback === "correct" && <p className="text-xs font-bold" style={{ color: GREEN }}>Correct. Next sequence loaded.</p>}
+                {feedback === "incorrect" && <p className="text-xs font-bold" style={{ color: RED }}>Incorrect. Next sequence loaded.</p>}
+                {timeLeft === 0 && <p className="text-xs font-bold" style={{ color: RED }}>Time is up. Your score has been saved.</p>}
+              </div>
+            </div>
+          ) : task === 3 ? (
+            <div className="w-full mt-4 space-y-2">
+              <div className="flex gap-2">
+                <input
+                  value={answer}
+                  onChange={e => {
+                    setAnswer(e.target.value.replace(/[^\d-]/g, ""))
+                    setFeedback(null)
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && running && timeLeft > 0) handleTaskAction()
+                  }}
+                  inputMode="numeric"
+                  placeholder="Type answer"
+                  disabled={!running || timeLeft === 0}
+                  className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-center text-xl font-bold tabular-nums text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 disabled:opacity-60"
+                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                />
+                <button
+                  onClick={handleTaskAction}
+                  disabled={!running || timeLeft === 0 || !answer.trim()}
+                  className="w-24 rounded-xl text-white font-bold text-sm disabled:opacity-50"
+                  style={{ backgroundColor: ORANGE }}
+                >
+                  Submit
+                </button>
+              </div>
+              <div className="min-h-5 text-center">
+                {feedback === "correct" && <p className="text-xs font-bold" style={{ color: GREEN }}>Correct. Next problem loaded.</p>}
+                {feedback === "incorrect" && <p className="text-xs font-bold" style={{ color: RED }}>Incorrect. Next problem loaded.</p>}
+                {timeLeft === 0 && <p className="text-xs font-bold" style={{ color: RED }}>Time is up. Your score has been saved.</p>}
+              </div>
+            </div>
+          ) : (
+            <button onClick={handleTaskAction} disabled={!running || timeLeft === 0} className="mt-4 px-8 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50" style={{ backgroundColor: ORANGE }}>{taskData.button}</button>
+          )}
         </Card>
+
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            [String(solved), "Solved", GREEN],
+            [String(attempts), "Attempts", BLUE],
+            [`${accuracy}%`, "Accuracy", ORANGE],
+          ].map(([value, label, color]) => (
+            <Card key={label} className="p-3 text-center">
+              <p className="text-2xl font-black tabular-nums" style={{ color: color as string, fontFamily: "'JetBrains Mono', monospace" }}>{value}</p>
+              <p className="text-[11px] text-gray-400 font-bold uppercase tracking-wide mt-0.5">{label}</p>
+            </Card>
+          ))}
+        </div>
 
         {/* Timer */}
         <Card className="p-4">
@@ -1279,7 +1590,11 @@ function StressTaskScreen({ nav, task = 0 }: { nav: Nav; task?: number }) {
             00:{String(timeLeft).padStart(2, "0")}
           </p>
           <div className="mt-2 h-1.5 rounded-full bg-gray-100">
-            <div className="h-1.5 rounded-full transition-all" style={{ width: `${(timeLeft / 45) * 100}%`, backgroundColor: timeLeft < 15 ? RED : ORANGE }} />
+            <div className="h-1.5 rounded-full transition-all" style={{ width: `${(timeLeft / TASK_DURATION) * 100}%`, backgroundColor: timeLeft < 15 ? RED : ORANGE }} />
+          </div>
+          <div className="flex justify-between mt-2 text-[11px] font-semibold text-gray-400">
+            <span>{elapsed}s used</span>
+            <span>{TASK_DURATION}s fixed time</span>
           </div>
         </Card>
 
@@ -1288,8 +1603,8 @@ function StressTaskScreen({ nav, task = 0 }: { nav: Nav; task?: number }) {
           <p className="text-xs font-semibold text-red-700">Your physiological signals are being recorded.</p>
         </Card>
 
-        <Btn onClick={() => nav("stress-recording")} color={ORANGE}>Continue to Recording</Btn>
-        <Btn onClick={() => nav("stress-recording")} variant="ghost" color={RED}>I Give Up</Btn>
+        <Btn onClick={() => finishTask("completed")} color={ORANGE}>Continue to Recording</Btn>
+        <Btn onClick={() => finishTask("gave_up")} variant="ghost" color={RED}>I Give Up</Btn>
         <div className="h-2" />
       </ScrollArea>
     </div>
@@ -2945,12 +3260,6 @@ export default function App() {
   const [stressTask, setStressTask] = useState(0)
   const [role, setRole] = useState<"participant"|"researcher"|"doctor">("participant")
   const [navOpen, setNavOpen] = useState(false)
-  const [statusTime, setStatusTime] = useState(currentTime())
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setStatusTime(currentTime()), 30_000)
-    return () => window.clearInterval(timer)
-  }, [])
 
   useEffect(() => {
     let active = true
@@ -3014,7 +3323,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex" style={{ background: "linear-gradient(135deg, #0B1E3D 0%, #1a3a6b 50%, #0B1E3D 100%)", fontFamily: "'Inter', sans-serif" }}>
+    <div className="min-h-screen w-full bg-[#EEF2F7]" style={{ fontFamily: "'Inter', sans-serif" }}>
       {/* Left sidebar nav for prototyping */}
       <div className="hidden" style={{ scrollbarWidth: "none" }}>
         <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest px-2 mb-2">All Screens</p>
@@ -3026,32 +3335,9 @@ export default function App() {
         ))}
       </div>
 
-      {/* Center: phone frame */}
-      <div className="flex-1 flex flex-col items-center justify-center p-4 min-h-screen">
-        {/* Frame */}
-        <div className="relative flex flex-col overflow-hidden"
-          style={{ width: 390, height: 844, borderRadius: 44, boxShadow: "0 0 0 1.5px rgba(255,255,255,0.15), 0 50px 100px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(0,0,0,0.3)", background: "#EEF2F7" }}>
-          {/* Notch */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 z-50" style={{ width: 120, height: 32, backgroundColor: "#000", borderRadius: "0 0 20px 20px" }} />
-          {/* Status bar */}
-          <div className="h-11 flex items-end justify-between px-7 pb-1 flex-shrink-0 relative z-10" style={{ backgroundColor: screen === "splash" || screen === "staff-login" ? NAVY : "transparent" }}>
-            <span className="text-[12px] font-bold" style={{ color: screen === "splash" || screen === "staff-login" ? "white" : "#0B1E3D" }}>{statusTime}</span>
-            <div className="flex items-center gap-1.5">
-              {[3, 5, 7].map(h => <div key={h} className="rounded-sm" style={{ width: 3, height: h, backgroundColor: screen === "splash" || screen === "staff-login" ? "white" : "#0B1E3D", opacity: 0.8 }} />)}
-              <div className="w-4 h-2.5 rounded-sm border" style={{ borderColor: screen === "splash" || screen === "staff-login" ? "white" : "#0B1E3D" }}>
-                <div className="h-full rounded-sm" style={{ width: "70%", backgroundColor: screen === "splash" || screen === "staff-login" ? "white" : "#0B1E3D" }} />
-              </div>
-            </div>
-          </div>
-          {/* Screen content */}
-          <div className="flex-1 overflow-hidden flex flex-col">
-            {renderScreen()}
-          </div>
-          {/* Home indicator */}
-          <div className="flex justify-center pb-2 flex-shrink-0" style={{ backgroundColor: screen === "splash" || screen === "staff-login" ? "#071A36" : "#EEF2F7" }}>
-            <div className="w-28 h-1 rounded-full" style={{ backgroundColor: screen === "splash" || screen === "staff-login" ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.15)" }} />
-          </div>
-        </div>
+      {/* App content */}
+      <div className="min-h-[100svh] h-[100svh] w-full max-w-md mx-auto overflow-hidden flex flex-col bg-[#EEF2F7]">
+        {renderScreen()}
 
         {/* Bottom screen navigator */}
         <div className="hidden">

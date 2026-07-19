@@ -11,6 +11,7 @@ import {
   CheckCheck,
   LoaderCircle,          
   LogOut,                   
+  Menu,
   RefreshCw,
   Search,
 } from "lucide-react";
@@ -18,6 +19,7 @@ import {
 import { Sidebar } from "./Sidebar";
 import {
   clearToken,
+  formatDateTimeIST,
   getNotifications,
   markNotificationRead,
 } from "../services/apiClient";
@@ -28,6 +30,7 @@ interface TopbarProps {
     name: string;
     role: string;
   };
+  onMenuClick?: () => void;
 }
 
 function sortNotifications(
@@ -46,7 +49,7 @@ function sortNotifications(
   });
 }
 
-function Topbar({ user }: TopbarProps) {
+function Topbar({ user, onMenuClick }: TopbarProps) {
   const navigate = useNavigate();
 
   const notificationContainerRef =
@@ -223,18 +226,7 @@ function Topbar({ user }: TopbarProps) {
   }
 
   function formatWhen(value: string | null) {
-    if (!value) return "";
-
-    const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-      return "";
-    }
-
-    return date.toLocaleString("en-IN", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
+    return formatDateTimeIST(value);
   }
 
   function navigateForNotification(
@@ -421,8 +413,17 @@ function Topbar({ user }: TopbarProps) {
   }
 
   return (
-    <header className="sticky top-0 z-10 flex h-12 items-center gap-4 border-b border-border bg-card px-5">
-      <div className="max-w-xs flex-1">
+    <header className="sticky top-0 z-10 flex min-h-12 items-center gap-2 border-b border-border bg-card px-3 py-2 sm:gap-4 sm:px-5">
+      <button
+        type="button"
+        onClick={onMenuClick}
+        className="rounded border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
+        aria-label="Open navigation"
+      >
+        <Menu size={16} />
+      </button>
+
+      <div className="min-w-0 flex-1 sm:max-w-xs">
         <form
           onSubmit={handleSearchSubmit}
           className="relative"
@@ -443,7 +444,7 @@ function Topbar({ user }: TopbarProps) {
         </form>
       </div>
 
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-3">
         <div
           ref={notificationContainerRef}
           className="relative"
@@ -477,7 +478,7 @@ function Topbar({ user }: TopbarProps) {
           </button>
 
           {notificationsOpen && (
-            <div className="absolute right-0 top-9 z-30 w-[360px] overflow-hidden rounded border border-border bg-card shadow-xl">
+            <div className="absolute right-0 top-9 z-30 w-[min(360px,calc(100vw-1.5rem))] overflow-hidden rounded border border-border bg-card shadow-xl">
               <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
                 <div>
                   <div className="text-xs font-semibold text-foreground">
@@ -659,11 +660,11 @@ function Topbar({ user }: TopbarProps) {
         <button
           type="button"
           onClick={handleLogout}
-          className="flex items-center gap-1.5 rounded border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+          className="flex items-center gap-1.5 rounded border border-border px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 sm:px-2.5"
           title="Logout"
         >
           <LogOut size={13} />
-          Logout
+          <span className="hidden sm:inline">Logout</span>
         </button>
       </div>
     </header>
@@ -671,14 +672,16 @@ function Topbar({ user }: TopbarProps) {
 }
 
 export function DashboardLayout({ user }: TopbarProps) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar />
+    <div className="min-h-screen overflow-x-hidden bg-background">
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      <div className="ml-60 flex min-h-screen flex-col">
-        <Topbar user={user} />
+      <div className="flex min-h-screen min-w-0 flex-col lg:pl-60">
+        <Topbar user={user} onMenuClick={() => setSidebarOpen(true)} />
 
-        <main className="flex-1 overflow-auto p-5">
+        <main className="min-w-0 flex-1 overflow-x-hidden p-3 sm:p-5">
           <Outlet />
         </main>
       </div>

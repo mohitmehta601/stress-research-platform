@@ -1,5 +1,30 @@
 import { Types } from "mongoose";
 
+const IST_TIME_ZONE = "Asia/Kolkata";
+
+function datePartsInIst(date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: IST_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+
+  return Object.fromEntries(parts.map((part) => [part.type, part.value]));
+}
+
+export function formatDateTimeIST(value) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const parts = datePartsInIst(date);
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} IST`;
+}
+
 export function serialize(value) {
   if (value instanceof Date) return value.toISOString();
   if (value instanceof Types.ObjectId) return value.toString();
@@ -28,7 +53,7 @@ export function average(items, key) {
 
 export function csvEscape(value) {
   if (value === null || value === undefined) return "";
-  const text = value instanceof Date ? value.toISOString() : typeof value === "object" ? JSON.stringify(value) : String(value);
+  const text = value instanceof Date ? formatDateTimeIST(value) : typeof value === "object" ? JSON.stringify(value) : String(value);
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

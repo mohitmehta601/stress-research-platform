@@ -45,36 +45,36 @@ export default function Physiological() {
   }
 
   return (
-    <div>
-      <div className="mb-5 flex items-center justify-between">
-        <div>
+    <div className="min-w-0">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-lg font-semibold text-foreground">Physiological Data</h1>
           <p className="text-xs text-muted-foreground mt-0.5">{records.length} records</p>
         </div>
-        <button onClick={exportCsv} className="flex items-center gap-1.5 rounded bg-[#1d4ed8] px-3 py-2 text-xs font-semibold text-white">
+        <button onClick={exportCsv} className="flex w-full items-center justify-center gap-1.5 rounded bg-[#1d4ed8] px-3 py-2 text-xs font-semibold text-white sm:w-auto">
           <Download size={13} />
           Export CSV
         </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-1 gap-3 mb-5 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total Records" value={records.length} icon={Activity} iconColor="text-blue-600" />
         <StatCard label="Good" value={good} icon={CheckCircle2} iconColor="text-emerald-600" />
         <StatCard label="Moderate" value={moderate} icon={AlertTriangle} iconColor="text-amber-600" />
         <StatCard label="Poor / Missing" value={poor + missing} icon={XCircle} iconColor="text-red-500" />
       </div>
 
-      <div className="flex items-center gap-3 mb-4">
-        <div className="relative">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="relative min-w-0 sm:w-60">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
-            className="pl-8 pr-3 py-1.5 text-xs bg-card border border-border rounded w-52 focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className="w-full rounded border border-border bg-card py-1.5 pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
             placeholder="Search participant or session"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
-        <select className="text-xs bg-card border border-border rounded px-2.5 py-1.5" value={condition} onChange={(event) => setCondition(event.target.value as ConditionFilter)}>
+        <select className="rounded border border-border bg-card px-2.5 py-1.5 text-xs sm:w-auto" value={condition} onChange={(event) => setCondition(event.target.value as ConditionFilter)}>
           <option value="combined">Combined</option>
           <option value="relaxed">Relaxed</option>
           <option value="stress">Stress</option>
@@ -85,8 +85,8 @@ export default function Physiological() {
       {loading ? (
         <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">Loading...</div>
       ) : (
-        <div className="bg-card rounded border border-border shadow-sm overflow-x-auto">
-          <table className="w-full text-xs">
+        <div className="min-w-0 overflow-x-auto rounded border border-border bg-card shadow-sm">
+          <table className="min-w-[980px] w-full text-xs">
             <thead>
               <tr className="bg-muted/60 border-b border-border">
                 {["Participant", "Session", "Condition", "Mean Temp", "RMSSD", "SDNN", "Heart Rate", "SpO2", "SCL", "SCR Peaks", "SCR Mean", "Quality"].map((heading) => (
