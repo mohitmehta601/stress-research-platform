@@ -79,7 +79,7 @@ export const settings = {
   mobileUrl: process.env.MOBILE_URL || "http://localhost:5174",
   brevoApiKey: process.env.BREVO_API_KEY || "",
   brevoSenderEmail: process.env.BREVO_SENDER_EMAIL || "",
-  brevoSenderName: process.env.BREVO_SENDER_NAME || "Stress Research Platform",
+  brevoSenderName: process.env.BREVO_SENDER_NAME || "StressSense",
   otpDevMode: booleanFromEnv("OTP_DEV_MODE", false),
   otpExpiryMinutes: numberFromEnv("OTP_EXPIRY_MINUTES", numberFromEnv("OTP_EXPIRES_MINUTES", 10)),
   thingSpeakApiKey: process.env.THINGSPEAK_API_KEY || process.env.ThingSpeak_API_KEY || process.env.ThinkSpeak_API_KEY || "",
