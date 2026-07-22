@@ -128,15 +128,15 @@ export interface DashboardSummary {
   consentedParticipants: number;
   sensorRecords: number;
   questionnaireRecords: number;
-  avgHeartRate: number;
-  avgHrv: number;
-  avgTemperature: number;
-  avgEda: number;
-  avgSdnn: number;
-  avgSpo2: number;
-  avgScrPeakCount: number;
-  avgScrMean: number;
-  avgStressScore: number;
+  avgHeartRate: number | null;
+  avgHrv: number | null;
+  avgTemperature: number | null;
+  avgEda: number | null;
+  avgSdnn: number | null;
+  avgSpo2: number | null;
+  avgScrPeakCount: number | null;
+  avgScrMean: number | null;
+  avgStressScore: number | null;
 }
 
 export interface SensorSnapshot {

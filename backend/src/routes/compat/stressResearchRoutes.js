@@ -2,9 +2,11 @@ import express from "express";
 import { Types } from "mongoose";
 import {
   DashboardAccessRequest,
+  DoctorAssessment,
   Notification,
   Participant,
   PasswordResetToken,
+  Physiological,
   QuestionnaireResponse,
   ResearchSession
 } from "../../models/index.js";
@@ -28,6 +30,8 @@ import { sendEmail } from "../../services/email.js";
 import { exportCsv, EXPORTS } from "../../services/dataset.js";
 import {
   fetchLatestThingSpeakReading,
+  fetchThingSpeakReadings,
+  normalizeSensorValue,
   normalizePhysiologicalPayload,
   THINGSPEAK_FIELD_DEFS
 } from "../../services/thingspeak.js";
@@ -50,6 +54,18 @@ function makeError(status, detail) {
   error.status = status;
   error.detail = detail;
   return error;
+}
+
+function sensorAverage(items, key, aliases = []) {
+  const keys = [key, ...aliases];
+  const values = items
+    .map((item) => {
+      const rawValue = keys.map((candidate) => item?.[candidate]).find((value) => value !== null && value !== undefined);
+      return normalizeSensorValue(key, rawValue);
+    })
+    .filter((value) => typeof value === "number");
+
+  return values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100 : null;
 }
 
 function tokenPayload(participant) {
@@ -269,7 +285,20 @@ function publicPhysiological(item = null) {
       value: item[def.key] ?? (def.alias ? item[def.alias] : null) ?? null,
       unit: def.unit
     })),
-    thingspeak: item.thingspeak || null
+    thingspeak: item.thingspeak || null,
+    recorded_at: item.recorded_at || null,
+    signal_quality: item.signal_quality || "pending",
+    series: Array.isArray(item.series) ? item.series.map((point) => ({
+      recorded_at: point.recorded_at || null,
+      entry_id: point.entry_id ?? point.thingspeak?.entry_id ?? null,
+      sensor_fields: point.sensor_fields || THINGSPEAK_FIELD_DEFS.map((def) => ({
+        name: def.name,
+        key: def.key,
+        field: def.field,
+        value: point[def.key] ?? (def.alias ? point[def.alias] : null) ?? null,
+        unit: def.unit
+      }))
+    })) : []
   };
 }
 
@@ -357,6 +386,80 @@ async function upsertQuestionnaireResponse(session, questionnaire) {
   );
 }
 
+function hasPhysiologicalValues(physiological) {
+  return Boolean(
+    physiological
+    && THINGSPEAK_FIELD_DEFS.some((def) => typeof physiological[def.key] === "number")
+  );
+}
+
+async function upsertPhysiologicalRecord(session, physiological) {
+  if (!hasPhysiologicalValues(physiological)) {
+    await Physiological.deleteOne({ session_id: session._id });
+    return;
+  }
+
+  const participant = await Participant.findById(session.participant_id).lean();
+  const recordedAt = physiological.recorded_at ? new Date(physiological.recorded_at) : new Date();
+  const record = {
+    ...physiological,
+    participant_id: session.participant_id,
+    participant_code: participant?.participant_code || session.participant_code || "",
+    session_id: session._id,
+    session_code: session.session_code,
+    condition: physiological.condition || session.condition,
+    thingspeak_entry_id: physiological.thingspeak?.entry_id ?? physiological.thingspeak_entry_id ?? null,
+    recorded_at: recordedAt,
+    updated_at: physiological.updated_at || new Date()
+  };
+
+  await Physiological.updateOne(
+    { session_id: session._id },
+    {
+      $set: record,
+      $setOnInsert: {
+        created_at: recordedAt
+      }
+    },
+    { upsert: true }
+  );
+}
+
+async function upsertDoctorAssessment(session, assessment) {
+  if (!assessment?.clinical_stress && !assessment?.clinical_stress_label) {
+    await DoctorAssessment.deleteOne({ session_id: session._id });
+    return;
+  }
+
+  const participant = await Participant.findById(session.participant_id).lean();
+  const createdAt = assessment.created_at ? new Date(assessment.created_at) : new Date();
+  const clinicalStress = String(assessment.clinical_stress || assessment.clinical_stress_label || "").toLowerCase();
+
+  await DoctorAssessment.updateOne(
+    { session_id: session._id },
+    {
+      $set: {
+        participant_id: session.participant_id,
+        participant_code: participant?.participant_code || session.participant_code || "",
+        session_id: session._id,
+        session_code: session.session_code,
+        condition: session.condition,
+        clinical_stress: clinicalStress,
+        clinical_stress_label: clinicalStress,
+        comments: assessment.comments ?? null,
+        recommendation: assessment.recommendation ?? null,
+        status: "completed",
+        created_at: createdAt,
+        updated_at: assessment.updated_at || new Date()
+      },
+      $setOnInsert: {
+        inserted_at: createdAt
+      }
+    },
+    { upsert: true }
+  );
+}
+
 async function syncManualSessionChildren(session, payload) {
   const now = new Date();
   const set = { updated_at: now };
@@ -416,7 +519,9 @@ async function syncManualSessionChildren(session, payload) {
     unset.doctor_assessment = "";
   }
   await ResearchSession.updateOne({ _id: session._id }, { $set: set, ...(Object.keys(unset).length ? { $unset: unset } : {}) });
+  await upsertPhysiologicalRecord(session, set.physiological || null);
   await upsertQuestionnaireResponse(session, set.questionnaire || null);
+  await upsertDoctorAssessment(session, set.doctor_assessment || null);
 }
 
 router.get("/", (_req, res) => res.json({ status: "ok", database: "mongodb" }));
@@ -655,6 +760,11 @@ router.post("/consents/decision", requireParticipant, asyncHandler(async (req, r
 
 router.get("/sessions/status", (_req, res) => res.json({ service: "sessions", status: "ready" }));
 
+router.get("/sessions/thingspeak/latest", requireParticipant, asyncHandler(async (_req, res) => {
+  const latest = await fetchLatestThingSpeakReading();
+  res.json(publicPhysiological(latest));
+}));
+
 router.post("/sessions", requireParticipant, asyncHandler(async (req, res) => {
   if (req.participant.role !== "participant") throw makeError(403, "Participant access is required");
   if (!req.participant.consent_completed || !req.participant.profile_completed) throw makeError(403, "Consent and profile are required before sessions");
@@ -758,6 +868,7 @@ router.post("/sessions/:sessionId/physiological", requireParticipant, asyncHandl
       updated_at: now
     }
   });
+  await upsertPhysiologicalRecord(session, physiological);
   await createNotification("physiological_data_uploaded", "Physiological data uploaded", `Sensor readings saved for ${session.session_code || req.params.sessionId}.`, session._id);
   res.status(201).json({ status: "saved", session_id: req.params.sessionId, physiological: publicPhysiological(physiological) });
 }));
@@ -767,9 +878,11 @@ router.post("/sessions/:sessionId/thingspeak-sync", requireParticipant, asyncHan
   const session = await ResearchSession.findOne({ _id: req.params.sessionId, participant_id: req.participant._id }).lean();
   if (!session) throw makeError(404, "Session not found");
   const now = new Date();
-  const latest = await fetchLatestThingSpeakReading();
+  const series = await fetchThingSpeakReadings({ minutes: req.body.duration_minutes ?? 5 });
+  const latest = series[series.length - 1] || await fetchLatestThingSpeakReading();
   const physiological = {
     ...latest,
+    series,
     condition: session.condition,
     recorded_at: latest.recorded_at ? new Date(latest.recorded_at) : now,
     updated_at: now
@@ -781,7 +894,8 @@ router.post("/sessions/:sessionId/thingspeak-sync", requireParticipant, asyncHan
       updated_at: now
     }
   });
-  await createNotification("thingspeak_data_synced", "ThingSpeak sensor data synced", `Latest ThingSpeak reading saved for ${session.session_code || req.params.sessionId}.`, session._id);
+  await upsertPhysiologicalRecord(session, physiological);
+  await createNotification("thingspeak_data_synced", "ThingSpeak sensor data synced", `ThingSpeak readings saved for ${session.session_code || req.params.sessionId}.`, session._id);
   res.status(201).json({ status: "synced", session_id: req.params.sessionId, physiological: publicPhysiological(physiological) });
 }));
 
@@ -834,6 +948,7 @@ router.post("/doctors/assessments", requireParticipant, requireResearcher, async
     updated_at: now
   };
   await ResearchSession.updateOne({ _id: session._id }, { $set: { doctor_assessment: document, updated_at: now } });
+  await upsertDoctorAssessment(session, document);
   await createNotification("doctor_assessment_completed", "Doctor assessment completed", `Clinical label saved for ${session.session_code || req.body.session_id}.`, session._id);
   res.status(201).json({ status: "saved", session_id: req.body.session_id, clinical_stress: document.clinical_stress });
 }));
@@ -848,20 +963,21 @@ router.get("/doctors/assessments/:sessionId", requireParticipant, requireResearc
 router.use("/dashboard", requireParticipant, requireResearcher);
 
 router.get("/dashboard/summary", asyncHandler(async (_req, res) => {
-  const [participants, totalSessions, completed, assessments, consented, sensorRecords, questionnaireRecords, recent, allSessions, completedSessions] = await Promise.all([
+  const [participants, totalSessions, completed, assessments, consented, sensorRecords, questionnaireRecords, recent, completedSessions] = await Promise.all([
     Participant.countDocuments(participantFilter),
     ResearchSession.countDocuments({}),
     ResearchSession.countDocuments({ status: "completed" }),
-    ResearchSession.countDocuments({ doctor_assessment: { $exists: true } }),
+    DoctorAssessment.countDocuments({}),
     Participant.countDocuments({ ...participantFilter, consent_completed: true }),
-    ResearchSession.countDocuments({ physiological: { $exists: true } }),
+    Physiological.countDocuments({}),
     QuestionnaireResponse.countDocuments({}),
     ResearchSession.find({}).sort({ started_at: -1 }).lean(),
-    ResearchSession.find({}).lean(),
     ResearchSession.find({ status: "completed" }).lean()
   ]);
-  const physiological = allSessions.map((item) => item.physiological).filter(Boolean);
-  const questionnaires = allSessions.map((item) => item.questionnaire).filter(hasFilledQuestionnaireAnswers);
+  const [physiological, questionnaires] = await Promise.all([
+    Physiological.find({}).lean(),
+    QuestionnaireResponse.find({}).lean()
+  ]);
   const required = participants * 2;
   const byParticipant = new Map();
   for (const session of completedSessions) {
@@ -887,14 +1003,14 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res) => {
       completed_protocol_slots: completedSlots
     },
     averages: {
-      heart_rate: average(physiological, "heart_rate"),
-      hrv: average(physiological, "hrv"),
-      temperature: average(physiological, "temperature"),
-      eda: average(physiological, "eda"),
-      sdnn_ms: average(physiological, "sdnn_ms"),
-      spo2_percent: average(physiological, "spo2_percent"),
-      scr_peak_count: average(physiological, "scr_peak_count"),
-      scr_mean: average(physiological, "scr_mean"),
+      heart_rate: sensorAverage(physiological, "heart_rate_bpm", ["heart_rate"]),
+      hrv: sensorAverage(physiological, "rmssd_ms", ["hrv"]),
+      temperature: sensorAverage(physiological, "mean_temp", ["temperature"]),
+      eda: sensorAverage(physiological, "scl_us", ["eda"]),
+      sdnn_ms: sensorAverage(physiological, "sdnn_ms"),
+      spo2_percent: sensorAverage(physiological, "spo2_percent"),
+      scr_peak_count: sensorAverage(physiological, "scr_peak_count"),
+      scr_mean: sensorAverage(physiological, "scr_mean"),
       stress_score: average(questionnaires, "score")
     },
     recent_sessions: recent.map((item) => ({
@@ -1042,7 +1158,12 @@ router.get("/dashboard/sessions/:sessionId", asyncHandler(async (req, res) => {
   if (!Types.ObjectId.isValid(req.params.sessionId)) throw makeError(400, "Invalid session ID");
   const session = await ResearchSession.findById(req.params.sessionId).lean();
   if (!session) throw makeError(404, "Session not found");
-  const participant = await Participant.findById(session.participant_id).lean();
+  const [participant, physiological, questionnaire, doctorAssessment] = await Promise.all([
+    Participant.findById(session.participant_id).lean(),
+    Physiological.findOne({ session_id: session._id }).lean(),
+    QuestionnaireResponse.findOne({ session_id: session._id }).lean(),
+    DoctorAssessment.findOne({ session_id: session._id }).lean()
+  ]);
   res.json({
     session: cleanDocument(session),
     participant: {
@@ -1050,9 +1171,9 @@ router.get("/dashboard/sessions/:sessionId", asyncHandler(async (req, res) => {
       participant_code: participant?.participant_code || "Unknown",
       name: participant?.name || "Unknown participant"
     },
-    physiological: cleanDocument(session.physiological),
-    questionnaire: cleanDocument(session.questionnaire),
-    doctor_assessment: cleanDocument(session.doctor_assessment)
+    physiological: cleanDocument(physiological || session.physiological),
+    questionnaire: cleanDocument(questionnaire || session.questionnaire),
+    doctor_assessment: cleanDocument(doctorAssessment || session.doctor_assessment)
   });
 }));
 
@@ -1066,9 +1187,11 @@ router.post("/dashboard/sessions/:sessionId/thingspeak-sync", asyncHandler(async
   const session = await ResearchSession.findById(req.params.sessionId).lean();
   if (!session) throw makeError(404, "Session not found");
   const now = new Date();
-  const latest = await fetchLatestThingSpeakReading();
+  const series = await fetchThingSpeakReadings({ minutes: req.body.duration_minutes ?? 5 });
+  const latest = series[series.length - 1] || await fetchLatestThingSpeakReading();
   const physiological = {
     ...latest,
+    series,
     condition: session.condition,
     recorded_at: latest.recorded_at ? new Date(latest.recorded_at) : now,
     updated_at: now
@@ -1080,6 +1203,7 @@ router.post("/dashboard/sessions/:sessionId/thingspeak-sync", asyncHandler(async
       updated_at: now
     }
   });
+  await upsertPhysiologicalRecord(session, physiological);
   await createNotification("thingspeak_data_synced", "ThingSpeak sensor data synced", `Latest ThingSpeak reading saved for ${session.session_code || req.params.sessionId}.`, session._id);
   res.status(201).json(await publicSessionRow(await ResearchSession.findById(session._id).lean()));
 }));
@@ -1094,23 +1218,22 @@ router.get("/dashboard/exports/:filename", asyncHandler(async (req, res) => {
 }));
 
 router.get("/dashboard/physiological", asyncHandler(async (req, res) => {
-  const query = { physiological: { $exists: true } };
-  if (req.query.quality) query["physiological.signal_quality"] = req.query.quality;
-  const sessions = await ResearchSession.find(query).sort({ "physiological.recorded_at": -1 }).lean();
-  const people = await Participant.find({ _id: { $in: sessions.map((item) => item.participant_id).filter(Boolean) } }).lean();
+  const query = {};
+  if (req.query.quality) query.signal_quality = req.query.quality;
+  if (req.query.condition) query.condition = req.query.condition;
+  const records = await Physiological.find(query).sort({ recorded_at: -1 }).lean();
+  const people = await Participant.find({ _id: { $in: records.map((item) => item.participant_id).filter(Boolean) } }).lean();
   const map = new Map(people.map((item) => [String(item._id), item]));
   const search = String(req.query.search || "").toLowerCase().trim();
   const rows = [];
-  for (const session of sessions) {
-    const item = session.physiological || {};
-    const person = map.get(String(session.participant_id)) || {};
-    const condition = session.condition || item.condition || "relaxed";
-    if (req.query.condition && condition !== req.query.condition) continue;
-    if (search && !`${person.participant_code || ""} ${session.session_code || ""}`.toLowerCase().includes(search)) continue;
+  for (const item of records) {
+    const person = map.get(String(item.participant_id)) || {};
+    const condition = item.condition || "relaxed";
+    if (search && !`${item.participant_code || person.participant_code || ""} ${item.session_code || ""}`.toLowerCase().includes(search)) continue;
     rows.push({
-      id: String(session._id),
-      participant_id: person.participant_code || String(session.participant_id || ""),
-      session_id: session.session_code || String(session._id),
+      id: String(item._id),
+      participant_id: item.participant_code || person.participant_code || String(item.participant_id || ""),
+      session_id: item.session_code || String(item.session_id || ""),
       condition,
       ecg_collected: Boolean(item.ecg),
       heart_rate: item.heart_rate,
@@ -1139,18 +1262,19 @@ router.get("/dashboard/physiological", asyncHandler(async (req, res) => {
 }));
 
 router.get("/dashboard/questionnaires", asyncHandler(async (req, res) => {
-  const sessions = await ResearchSession.find({ questionnaire: { $exists: true } }).sort({ "questionnaire.submitted_at": -1 }).lean();
-  const people = await Participant.find({ _id: { $in: sessions.map((item) => item.participant_id).filter(Boolean) } }).lean();
+  const query = {};
+  if (req.query.condition) query.condition = req.query.condition;
+  const responses = await QuestionnaireResponse.find(query).sort({ submitted_at: -1 }).lean();
+  const people = await Participant.find({ _id: { $in: responses.map((item) => item.participant_id).filter(Boolean) } }).lean();
   const map = new Map(people.map((item) => [String(item._id), item]));
-  const rows = sessions.filter((session) => hasFilledQuestionnaireAnswers(session.questionnaire)).map((session) => {
-    const item = session.questionnaire || {};
+  const rows = responses.filter(hasFilledQuestionnaireAnswers).map((item) => {
     const answers = item.answers || {};
-    const person = map.get(String(session.participant_id)) || {};
+    const person = map.get(String(item.participant_id)) || {};
     return {
-      id: String(session._id),
-      participant_id: person.participant_code || String(session.participant_id || ""),
-      session_id: session.session_code || String(session._id),
-      condition: session.condition || item.condition || "relaxed",
+      id: String(item._id),
+      participant_id: item.participant_code || person.participant_code || String(item.participant_id || ""),
+      session_id: item.session_code || String(item.session_id || ""),
+      condition: item.condition || "relaxed",
       questionnaire_key: item.questionnaire_key,
       answers,
       mood: answers.mood || answers.current_mood,
@@ -1169,12 +1293,16 @@ router.get("/dashboard/questionnaires", asyncHandler(async (req, res) => {
 
 router.get("/dashboard/doctor", asyncHandler(async (req, res) => {
   const sessions = await ResearchSession.find({}).sort({ started_at: -1 }).lean();
-  const people = await Participant.find({ _id: { $in: sessions.map((item) => item.participant_id).filter(Boolean) } }).lean();
+  const [people, assessments] = await Promise.all([
+    Participant.find({ _id: { $in: sessions.map((item) => item.participant_id).filter(Boolean) } }).lean(),
+    DoctorAssessment.find({}).lean()
+  ]);
   const map = new Map(people.map((item) => [String(item._id), item]));
+  const assessmentsBySession = new Map(assessments.filter((item) => item.session_id).map((item) => [String(item.session_id), item]));
   const status = req.query.status;
   const rows = [];
   for (const session of sessions) {
-    const assessment = session.doctor_assessment;
+    const assessment = assessmentsBySession.get(String(session._id)) || session.doctor_assessment;
     const itemStatus = assessment ? "completed" : "pending";
     if (status && itemStatus !== status) continue;
     const person = map.get(String(session.participant_id)) || {};
@@ -1206,6 +1334,7 @@ router.post("/dashboard/doctor", asyncHandler(async (req, res) => {
     updated_at: now
   };
   await ResearchSession.updateOne({ _id: session._id }, { $set: { doctor_assessment: document, updated_at: now } });
+  await upsertDoctorAssessment(session, document);
   await createNotification("doctor_assessment_completed", "Doctor assessment completed", `Clinical label saved for ${session.session_code || req.body.session_id}.`, session._id);
   const participant = await Participant.findById(session.participant_id).lean();
   res.status(201).json({

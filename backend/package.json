@@ -11,6 +11,7 @@
     "create:super-admin": "node create-super-admin.js",
     "seed:super-admins": "node seed-super-admins.js",
     "backfill:questionnaires": "node scripts/backfill-questionnaire-responses.js",
+    "backfill:module-collections": "node scripts/backfill-module-collections.js",
     "cleanup:incomplete-sessions": "node scripts/cleanup-incomplete-sessions.js",
     "sync:mongodb": "node sync-mongo-atlas.js"
   },

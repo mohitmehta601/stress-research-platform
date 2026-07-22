@@ -48,16 +48,15 @@ export async function sessionRows() {
 }
 
 export async function physiologicalRows() {
-  const sessions = await ResearchSession.find({ physiological: { $exists: true } }).sort({ "physiological.recorded_at": -1 }).lean();
-  const people = await Participant.find({ _id: { $in: sessions.map((item) => item.participant_id).filter(Boolean) } }).lean();
+  const records = await Physiological.find({}).sort({ recorded_at: -1 }).lean();
+  const people = await Participant.find({ _id: { $in: records.map((item) => item.participant_id).filter(Boolean) } }).lean();
   const map = new Map(people.map((item) => [String(item._id), item]));
-  return sessions.map((session) => {
-    const item = session.physiological || {};
-    const person = map.get(String(session.participant_id)) || {};
+  return records.map((item) => {
+    const person = map.get(String(item.participant_id)) || {};
     return {
-      ParticipantID: person.participant_code || String(session.participant_id || ""),
-      SessionID: session.session_code || String(session._id || ""),
-      Condition: session.condition || item.condition || "",
+      ParticipantID: item.participant_code || person.participant_code || String(item.participant_id || ""),
+      SessionID: item.session_code || String(item.session_id || ""),
+      Condition: item.condition || "",
       ECG: item.ecg || "",
       HeartRate: item.heart_rate || "",
       HRV: item.hrv || "",
@@ -92,16 +91,16 @@ export async function questionnaireRows() {
 }
 
 export async function doctorRows() {
-  const sessions = await ResearchSession.find({ doctor_assessment: { $exists: true } }).sort({ "doctor_assessment.created_at": -1 }).lean();
-  return sessions.map((session) => ({
-    id: String(session._id || ""),
-    session_id: String(session._id || ""),
-    participant_id: String(session.participant_id || ""),
-    clinical_stress: session.doctor_assessment?.clinical_stress || "",
-    comments: session.doctor_assessment?.comments || "",
-    recommendation: session.doctor_assessment?.recommendation || "",
-    created_at: session.doctor_assessment?.created_at || "",
-    updated_at: session.doctor_assessment?.updated_at || ""
+  const assessments = await DoctorAssessment.find({}).sort({ created_at: -1 }).lean();
+  return assessments.map((assessment) => ({
+    id: String(assessment._id || ""),
+    session_id: assessment.session_code || String(assessment.session_id || ""),
+    participant_id: assessment.participant_code || String(assessment.participant_id || ""),
+    clinical_stress: assessment.clinical_stress || assessment.clinical_stress_label || "",
+    comments: assessment.comments || "",
+    recommendation: assessment.recommendation || "",
+    created_at: assessment.created_at || "",
+    updated_at: assessment.updated_at || ""
   }));
 }
 

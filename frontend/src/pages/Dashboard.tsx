@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   CheckCircle2,
   FlaskConical,
   Heart,
+  RotateCcw,
   Shield,
   ShieldCheck,
   Thermometer,
@@ -35,7 +36,13 @@ import type {
   Session,
 } from "../types";
 
-function PageHeader() {
+function PageHeader({
+  loading,
+  onRefresh,
+}: {
+  loading: boolean;
+  onRefresh: () => void;
+}) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
       <div>
@@ -49,14 +56,29 @@ function PageHeader() {
         </p>
       </div>
 
-      <div className="font-mono text-xs text-muted-foreground">
-        {new Date().toLocaleDateString("en-GB", {
-          timeZone: "Asia/Kolkata",
-          weekday: "long",
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        })}
+      <div className="flex items-center gap-3">
+        <div className="font-mono text-xs text-muted-foreground">
+          {new Date().toLocaleDateString("en-GB", {
+            timeZone: "Asia/Kolkata",
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="inline-flex items-center gap-2 rounded border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-sm transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <RotateCcw
+            size={13}
+            className={loading ? "animate-spin" : ""}
+          />
+          Refresh
+        </button>
       </div>
     </div>
   );
@@ -74,6 +96,38 @@ function EmptyChart({
   );
 }
 
+const SENSOR_RANGES: Record<string, [number, number]> = {
+  meanTemp: [20, 45],
+  rmssdMs: [0, 300],
+  sdnnMs: [0, 300],
+  heartRateBpm: [30, 220],
+  spo2Percent: [70, 100],
+  sclUs: [0, 100],
+  scrPeakCount: [0, 100],
+  scrMean: [0, 100],
+};
+
+function cleanSensorValue(
+  key: keyof SensorSnapshot,
+  value: number | null | undefined,
+): number | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return null;
+  }
+
+  let normalized = value;
+  if (key === "meanTemp" && normalized > 100 && normalized <= 4500) {
+    normalized = normalized / 100;
+  }
+
+  const range = SENSOR_RANGES[key];
+  if (range && (normalized < range[0] || normalized > range[1])) {
+    return null;
+  }
+
+  return Math.round(normalized * 100) / 100;
+}
+
 export default function Dashboard() {
   const [summary, setSummary] =
     useState<DashboardSummary | null>(null);
@@ -82,12 +136,39 @@ export default function Dashboard() {
   const [latestSensor, setLatestSensor] =
     useState<SensorSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sensorRefreshing, setSensorRefreshing] = useState(false);
   const [error, setError] = useState("");
+
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const [dashboardSummary, researchSessions, thingSpeakReading] =
+        await Promise.all([
+          getDashboardSummary(),
+          getSessions(),
+          getLatestThingSpeakReading(),
+        ]);
+
+      setSummary(dashboardSummary);
+      setSessions(researchSessions);
+      setLatestSensor(thingSpeakReading);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Could not load dashboard data.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
 
-    async function loadDashboard() {
+    async function loadInitialDashboard() {
       setLoading(true);
       setError("");
 
@@ -119,11 +200,28 @@ export default function Dashboard() {
       }
     }
 
-    void loadDashboard();
+    void loadInitialDashboard();
 
     return () => {
       active = false;
     };
+  }, []);
+
+  const refreshThingSpeakValues = useCallback(async () => {
+    setSensorRefreshing(true);
+    setError("");
+
+    try {
+      setLatestSensor(await getLatestThingSpeakReading());
+    } catch (refreshError) {
+      setError(
+        refreshError instanceof Error
+          ? refreshError.message
+          : "Could not refresh ThingSpeak values.",
+      );
+    } finally {
+      setSensorRefreshing(false);
+    }
   }, []);
 
   const dashboardData = useMemo(() => {
@@ -210,68 +308,72 @@ export default function Dashboard() {
 
   const hasSavedSensorRecords = summary.sensorRecords > 0;
   const sensorValue = (
-    averageValue: number,
+    key: keyof SensorSnapshot,
+    averageValue: number | null,
     latestValue: number | null | undefined,
-  ) => (hasSavedSensorRecords ? averageValue : latestValue);
-  const sourceText = hasSavedSensorRecords
-    ? "Average values calculated from saved research observations."
-    : latestSensor
-      ? "Latest values fetched from the configured ThingSpeak channel."
+  ) => (
+    cleanSensorValue(key, latestValue)
+    ?? cleanSensorValue(key, averageValue)
+  );
+  const sourceText = latestSensor
+    ? "Latest values fetched from the configured ThingSpeak channel."
+    : hasSavedSensorRecords
+      ? "Showing saved research observations after removing invalid outliers."
       : "No saved observations or live ThingSpeak reading available.";
 
   const physiologicalMetrics = [
     {
       label: "Mean Temp",
-      value: sensorValue(summary.avgTemperature, latestSensor?.meanTemp),
+      value: sensorValue("meanTemp", summary.avgTemperature, latestSensor?.meanTemp),
       unit: "C",
       icon: Thermometer,
       iconClassName: "text-orange-500",
     },
     {
       label: "RMSSD",
-      value: sensorValue(summary.avgHrv, latestSensor?.rmssdMs),
+      value: sensorValue("rmssdMs", summary.avgHrv, latestSensor?.rmssdMs),
       unit: "ms",
       icon: Waves,
       iconClassName: "text-blue-500",
     },
     {
       label: "SDNN",
-      value: sensorValue(summary.avgSdnn, latestSensor?.sdnnMs),
+      value: sensorValue("sdnnMs", summary.avgSdnn, latestSensor?.sdnnMs),
       unit: "ms",
       icon: Waves,
       iconClassName: "text-violet-600",
     },
     {
       label: "Heart Rate",
-      value: sensorValue(summary.avgHeartRate, latestSensor?.heartRateBpm),
+      value: sensorValue("heartRateBpm", summary.avgHeartRate, latestSensor?.heartRateBpm),
       unit: "bpm",
       icon: Heart,
       iconClassName: "text-red-500",
     },
     {
       label: "SpO2",
-      value: sensorValue(summary.avgSpo2, latestSensor?.spo2Percent),
+      value: sensorValue("spo2Percent", summary.avgSpo2, latestSensor?.spo2Percent),
       unit: "%",
       icon: Shield,
       iconClassName: "text-emerald-600",
     },
     {
       label: "SCL",
-      value: sensorValue(summary.avgEda, latestSensor?.sclUs),
+      value: sensorValue("sclUs", summary.avgEda, latestSensor?.sclUs),
       unit: "uS",
       icon: Zap,
       iconClassName: "text-teal-600",
     },
     {
       label: "SCR Peaks",
-      value: sensorValue(summary.avgScrPeakCount, latestSensor?.scrPeakCount),
+      value: sensorValue("scrPeakCount", summary.avgScrPeakCount, latestSensor?.scrPeakCount),
       unit: "count",
       icon: Activity,
       iconClassName: "text-amber-600",
     },
     {
       label: "SCR Mean",
-      value: sensorValue(summary.avgScrMean, latestSensor?.scrMean),
+      value: sensorValue("scrMean", summary.avgScrMean, latestSensor?.scrMean),
       unit: "",
       icon: Activity,
       iconClassName: "text-indigo-600",
@@ -287,7 +389,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-5">
-      <PageHeader />
+      <PageHeader loading={loading} onRefresh={() => void loadDashboard()} />
 
       {/* Core research indicators */}
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -325,14 +427,29 @@ export default function Dashboard() {
 
       {/* Physiological research averages */}
       <section className="rounded border border-border bg-card p-4 shadow-sm">
-        <div className="mb-3">
-          <h2 className="text-xs font-semibold text-foreground">
-            Physiological Summary
-          </h2>
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-xs font-semibold text-foreground">
+              Physiological Summary
+            </h2>
 
-          <p className="mt-0.5 text-[10px] text-muted-foreground">
-            {sourceText}
-          </p>
+            <p className="mt-0.5 text-[10px] text-muted-foreground">
+              {sourceText}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void refreshThingSpeakValues()}
+            disabled={sensorRefreshing}
+            className="inline-flex w-fit items-center gap-2 rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RotateCcw
+              size={13}
+              className={sensorRefreshing ? "animate-spin" : ""}
+            />
+            Refresh ThingSpeak Values
+          </button>
         </div>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-9">

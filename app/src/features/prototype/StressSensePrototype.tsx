@@ -9,7 +9,7 @@ import {
   Eye, EyeOff, Filter, Radio,
 } from "lucide-react"
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts"
-import { api, type MobileParticipant, type MobileSession } from "../../services/apiClient"
+import { api, type MobileParticipant, type MobileSession, type PhysiologicalPayload, type PhysiologicalSensorField } from "../../services/apiClient"
 
 // â”€â”€â”€ Design constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const NAVY = "#0B1E3D"
@@ -286,6 +286,20 @@ function DataBit({ ok }: { ok: boolean | null }) {
   if (ok === null) return <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>Pend</span>
   if (ok)          return <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded" style={{ backgroundColor: "#DCFCE7", color: "#15803D" }}><Check size={12} strokeWidth={3} /></span>
   return            <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded" style={{ backgroundColor: "#FEE2E2", color: "#B91C1C" }}><X size={12} strokeWidth={3} /></span>
+}
+
+function FieldSignalCard({ field, color }: { field: PhysiologicalSensorField; color: string }) {
+  const value = field.value == null ? "-" : Number(field.value).toFixed(Number.isInteger(field.value) ? 0 : 2)
+  return (
+    <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
+      <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{field.name}</p>
+      <div className="flex items-baseline gap-1">
+        <span className="text-[18px] font-bold" style={{ color, fontFamily: "'JetBrains Mono', monospace" }}>{value}</span>
+        <span className="text-[11px] text-gray-400">{field.unit}</span>
+      </div>
+      <p className="text-[10px] text-gray-400 mt-1">{field.field}</p>
+    </div>
+  )
 }
 
 // â”€â”€â”€ Scroll wrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1111,36 +1125,77 @@ function RelaxedInstructionsScreen({ nav }: { nav: Nav }) {
 
 // SCREEN 9 â€” Relaxed Recording
 function RelaxedRecordingScreen({ nav }: { nav: Nav }) {
-  const [seconds, setSeconds] = useState(275)
+  const RECORDING_SECONDS = 300
+  const [seconds, setSeconds] = useState(RECORDING_SECONDS)
   const [running, setRunning] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+  const [physiological, setPhysiological] = useState<PhysiologicalPayload | null>(null)
   useEffect(() => {
     if (!running) return
     const id = setInterval(() => setSeconds(s => s > 0 ? s - 1 : 0), 1000)
     return () => clearInterval(id)
   }, [running])
+  useEffect(() => {
+    if (seconds === 0) setRunning(false)
+  }, [seconds])
+  const refreshValues = async () => {
+    setRefreshing(true)
+    setError("")
+    try {
+      const latest = await api.getLatestThingSpeak()
+      setPhysiological(latest)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not fetch ThingSpeak data")
+    } finally {
+      setRefreshing(false)
+    }
+  }
+  useEffect(() => {
+    void refreshValues()
+  }, [])
+  const saveHealthData = async () => {
+    setRunning(false)
+    setSaving(true)
+    setError("")
+    try {
+      const latest = physiological ?? await api.getLatestThingSpeak()
+      setPhysiological(latest)
+      const result = await api.saveHealthData(latest, "relaxed")
+      if (result?.physiological) setPhysiological(result.physiological)
+      nav("audio-recording", { sessionType: "relaxed" })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save health data")
+    } finally {
+      setSaving(false)
+    }
+  }
   const mins = String(Math.floor(seconds / 60)).padStart(2, "0")
   const secs = String(seconds % 60).padStart(2, "0")
-  const pct = (seconds / 300) * 100
-  const signals = [
-    { label: "Mean Temp", value: "36.6", unit: "C", sparkType: "temp", color: ORANGE },
-    { label: "RMSSD", value: "48", unit: "ms", sparkType: "hrv", color: BLUE },
-    { label: "SDNN", value: "52", unit: "ms", sparkType: "hrv", color: "#7C3AED" },
-    { label: "Heart Rate", value: "72", unit: "bpm", sparkType: "heart", color: RED },
-    { label: "SpO2", value: "98", unit: "%", sparkType: "heart", color: GREEN },
-    { label: "SCL", value: "2.35", unit: "uS", sparkType: "eda", color: TEAL },
+  const pct = (seconds / RECORDING_SECONDS) * 100
+  const expectedFields: PhysiologicalSensorField[] = [
+    { field: "field1", key: "mean_temp", name: "Mean_Temp", value: null, unit: "C" },
+    { field: "field2", key: "rmssd_ms", name: "RMSSD_ms", value: null, unit: "ms" },
+    { field: "field3", key: "sdnn_ms", name: "SDNN_ms", value: null, unit: "ms" },
+    { field: "field4", key: "heart_rate_bpm", name: "Heart_Rate_bpm", value: null, unit: "bpm" },
+    { field: "field5", key: "spo2_percent", name: "SpO2_percent", value: null, unit: "%" },
+    { field: "field6", key: "scl_us", name: "SCL_uS", value: null, unit: "uS" },
+    { field: "field7", key: "scr_peak_count", name: "SCR_Peak_Count", value: null, unit: "count" },
+    { field: "field8", key: "scr_mean", name: "SCR_Mean", value: null, unit: "" },
   ]
-  const displaySignals = [
-    { label: "Temp", value: "36.6", unit: "C", sparkType: "temp", color: ORANGE },
-    { label: "RMSSD", value: "48", unit: "ms", sparkType: "hrv", color: BLUE },
-    { label: "SDNN", value: "52", unit: "ms", sparkType: "hrv", color: "#7C3AED" },
-    { label: "HR", value: "72", unit: "bpm", sparkType: "heart", color: RED },
-    { label: "SpO2", value: "98", unit: "%", sparkType: "heart", color: GREEN },
-    { label: "SCL", value: "2.35", unit: "uS", sparkType: "eda", color: TEAL },
-  ]
+  const fetchedFields = physiological?.sensor_fields ?? []
+  const fields = expectedFields.map(field => fetchedFields.find(item => item.field === field.field || item.key === field.key) ?? field)
+  const colors = [ORANGE, BLUE, "#7C3AED", RED, GREEN, TEAL, "#0F766E", "#64748B"]
+  const statusText = refreshing
+    ? "Refreshing ThingSpeak values"
+    : physiological
+      ? "ThingSpeak values loaded"
+      : "Ready to refresh values"
   return (
     <div className="flex flex-col h-full bg-[#F0F4F8]">
       <NavBar title="Relaxed Session" subtitle="Keep calm and relax" onBack={() => nav("relaxed-instructions")} />
-      <ScrollArea className="px-4 py-4 space-y-3">
+      <ScrollArea className="px-4 py-4 space-y-4">
         {/* Timer */}
         <Card className="p-5 flex flex-col items-center">
           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Remaining Time</p>
@@ -1158,39 +1213,32 @@ function RelaxedRecordingScreen({ nav }: { nav: Nav }) {
             </div>
           </div>
           <div className="flex items-center gap-2 mt-3">
-            <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: GREEN }} />
-            <span className="text-xs font-semibold" style={{ color: GREEN }}>Recording in progress</span>
-          </div>
-          <div className="flex gap-2 mt-3 w-full">
-            <button onClick={() => setRunning(!running)} className="flex-1 py-2 rounded-xl border-2 flex items-center justify-center gap-1.5 text-sm font-semibold text-gray-600 border-gray-200">
-              {running ? <Pause size={14} /> : <Play size={14} />}{running ? "Pause" : "Resume"}
-            </button>
+            <div className={`w-2 h-2 rounded-full ${refreshing ? "animate-pulse" : ""}`} style={{ backgroundColor: physiological ? GREEN : refreshing ? BLUE : ORANGE }} />
+            <span className="text-xs font-semibold" style={{ color: physiological ? GREEN : refreshing ? BLUE : ORANGE }}>{statusText}</span>
           </div>
         </Card>
 
-        {/* Status strip */}
-        <div className="hidden">
-          <div className="bg-white rounded-xl p-3 border border-gray-100 flex items-center gap-2">
-            <Battery size={16} className="text-green-500" />
-            <div><p className="text-xs text-gray-400">Battery</p><p className="text-sm font-bold text-gray-800">88%</p></div>
-          </div>
-          <div className="bg-white rounded-xl p-3 border border-gray-100 flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: GREEN }} />
-            <div><p className="text-xs text-gray-400">Signal Quality</p><p className="text-sm font-bold" style={{ color: GREEN }}>Good</p></div>
-          </div>
-        </div>
-
-        {/* Signal grid */}
         <div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 px-0.5">Live Signals</p>
+          <div className="flex items-center justify-between mb-2 px-0.5">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">ThingSpeak Values</p>
+            <button onClick={refreshValues} disabled={refreshing || saving} className="px-3 py-1.5 rounded-lg text-xs font-bold text-white disabled:opacity-60 flex items-center gap-1.5" style={{ backgroundColor: BLUE }}>
+              <RotateCcw size={12} />Refresh
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-2">
-            {displaySignals.map(s => <SignalCard key={s.label} {...s} />)}
+            {fields.map((field, index) => <FieldSignalCard key={field.key} field={field} color={colors[index % colors.length]} />)}
           </div>
         </div>
 
-        {/* Stop button */}
-        <button onClick={async () => { await api.savePhysiological("relaxed"); nav("audio-recording", { sessionType: "relaxed" }) }} className="w-full py-3.5 rounded-xl font-semibold text-white text-[15px] flex items-center justify-center gap-2" style={{ backgroundColor: RED }}>
-          <Square size={16} />Stop Session
+        {error && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl p-2">{error}</p>}
+
+        <button
+          onClick={saveHealthData}
+          disabled={saving || refreshing}
+          className="w-full py-3.5 rounded-xl font-semibold text-white text-[15px] flex items-center justify-center gap-2 disabled:opacity-60"
+          style={{ backgroundColor: GREEN }}
+        >
+          <Save size={16} />{saving ? "Saving Health Data..." : "Save Health Data"}
         </button>
         <div className="h-2" />
       </ScrollArea>
@@ -1696,7 +1744,7 @@ function StressRecordingScreen({ nav }: { nav: Nav }) {
   )
 }
 
-// SCREEN 13 â€” Questionnaire
+// SCREEN 13 - Audio Recording
 function AudioRecordingScreen({ nav, sessionType }: { nav: Nav; sessionType: SessionType }) {
   const isRelaxed = sessionType === "relaxed"
   const color = isRelaxed ? GREEN : ORANGE
@@ -1758,13 +1806,27 @@ function AudioRecordingScreen({ nav, sessionType }: { nav: Nav; sessionType: Ses
   }
 
   const saveAndContinue = () => {
+    if (!audioUrl && !recording) {
+      setError("Record the voice sample before continuing.")
+      return
+    }
     if (recording) stopRecording()
     localStorage.setItem(`stresssense_audio_${api.activeSessionId ?? "current"}`, "collected")
     nav("questionnaire", { sessionType })
   }
 
+  const resetRecording = () => {
+    if (recording) stopRecording()
+    if (audioUrl) URL.revokeObjectURL(audioUrl)
+    setAudioUrl("")
+    setElapsed(0)
+    setError("")
+  }
+
   const timeText = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`
   const bars = [18, 34, 24, 52, 31, 68, 42, 26, 58, 36, 74, 46, 30, 62, 40, 20]
+  const statusText = recording ? "Recording in progress" : audioUrl ? "Voice sample captured" : "Ready to record"
+  const canContinue = Boolean(audioUrl) && !recording
 
   return (
     <div className="flex flex-col h-full bg-[#F0F4F8]">
@@ -1773,39 +1835,46 @@ function AudioRecordingScreen({ nav, sessionType }: { nav: Nav; sessionType: Ses
         subtitle={isRelaxed ? "Relaxed session voice sample" : "Stress session voice sample"}
         onBack={() => nav(isRelaxed ? "relaxed-recording" : "stress-recording", { sessionType })}
       />
-      <ScrollArea className="px-4 py-5 space-y-4">
+      <ScrollArea className="px-4 py-4 space-y-4">
         <Card className="p-4">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${color}18` }}>
-              <Mic size={20} style={{ color }} />
+          <div className="flex items-start gap-3">
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${color}14` }}>
+              <Mic size={22} style={{ color }} />
             </div>
-            <div>
-              <p className="text-sm font-bold text-gray-900">Voice sample collection</p>
-              <p className="text-xs text-gray-400">Read the paragraph clearly in your normal voice.</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-base font-black text-gray-900 leading-tight">Voice sample</p>
+              <p className="text-sm text-gray-500 mt-1 leading-snug">Read this paragraph clearly in your normal voice.</p>
             </div>
           </div>
-          <div className="p-4 rounded-xl border border-gray-100 bg-gray-50">
-            <p className="text-sm text-gray-700 leading-relaxed">{AUDIO_PROMPT}</p>
+          <div className="mt-4 p-4 rounded-2xl border border-gray-100 bg-slate-50">
+            <p className="text-[15px] text-slate-700 leading-7">{AUDIO_PROMPT}</p>
           </div>
         </Card>
 
-        <Card className="p-5 text-center">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Recording Status</p>
-          <div className="flex items-end justify-center gap-1 h-20 mb-4">
+        <Card className="p-5">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Recording Status</p>
+              <div className="flex items-center gap-2 mt-2">
+                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: recording ? RED : audioUrl ? color : "#94A3B8" }} />
+                <p className="text-sm font-semibold text-slate-700">{statusText}</p>
+              </div>
+            </div>
+            <p className="text-3xl font-black tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: recording ? RED : color }}>{timeText}</p>
+          </div>
+          <div className="flex items-end justify-center gap-1 h-16 rounded-2xl bg-slate-50 border border-slate-100 px-3 py-3">
             {bars.map((height, index) => (
               <div
                 key={index}
-                className={`w-2 rounded-full ${recording ? "animate-pulse" : ""}`}
+                className={`w-2 rounded-full transition-colors ${recording ? "animate-pulse" : ""}`}
                 style={{
-                  height,
+                  height: `${Math.max(14, height - 16)}px`,
                   backgroundColor: recording || audioUrl ? color : "#CBD5E1",
                   animationDelay: `${index * 70}ms`,
                 }}
               />
             ))}
           </div>
-          <p className="text-3xl font-black tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color }}>{timeText}</p>
-          <p className="text-xs text-gray-400 mt-1">{recording ? "Recording..." : audioUrl ? "Recording captured" : "Ready to record"}</p>
           {audioUrl && <audio className="w-full mt-4" controls src={audioUrl} />}
         </Card>
 
@@ -1815,19 +1884,42 @@ function AudioRecordingScreen({ nav, sessionType }: { nav: Nav; sessionType: Ses
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-[1fr_auto] gap-3">
           {!recording ? (
-            <Btn onClick={startRecording} color={color} sm>{audioUrl ? "Record Again" : "Start Recording"}</Btn>
+            <button
+              onClick={startRecording}
+              className="h-14 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2 active:opacity-80"
+              style={{ backgroundColor: color }}
+            >
+              <Mic size={19} /> {audioUrl ? "Record Again" : "Start Recording"}
+            </button>
           ) : (
-            <Btn onClick={stopRecording} color={RED} sm><Square size={15} /> Stop</Btn>
+            <button
+              onClick={stopRecording}
+              className="h-14 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2 active:opacity-80"
+              style={{ backgroundColor: RED }}
+            >
+              <Square size={18} /> Stop Recording
+            </button>
           )}
-          <Btn onClick={() => { if (audioUrl) URL.revokeObjectURL(audioUrl); setAudioUrl(""); setElapsed(0); setError("") }} variant="outline" color="#64748B" sm>
-            <RotateCcw size={15} /> Restart
-          </Btn>
+          <button
+            onClick={resetRecording}
+            className="h-14 w-14 rounded-2xl border-2 border-slate-300 text-slate-600 flex items-center justify-center active:bg-slate-100"
+            aria-label="Restart recording"
+            title="Restart"
+          >
+            <RotateCcw size={22} />
+          </button>
         </div>
 
-        <Btn onClick={saveAndContinue} color={BLUE}>Save Audio & Continue</Btn>
-        <p className="text-[11px] text-center text-gray-400 px-4">Audio is collected only inside the participant app flow and is not shown on the researcher dashboard.</p>
+        <button
+          onClick={saveAndContinue}
+          disabled={!canContinue}
+          className={`w-full h-14 rounded-2xl font-bold text-base flex items-center justify-center gap-2 active:opacity-80 ${canContinue ? "text-white" : "text-slate-400 bg-slate-200"}`}
+          style={canContinue ? { backgroundColor: BLUE } : undefined}
+        >
+          <Save size={19} /> Save Audio & Continue
+        </button>
         <div className="h-2" />
       </ScrollArea>
     </div>

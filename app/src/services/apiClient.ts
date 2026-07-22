@@ -8,6 +8,8 @@ function normalizeApiBase(url?: string): string {
 const API_BASE = normalizeApiBase(
   import.meta.env?.VITE_API_BASE_URL || import.meta.env?.VITE_API_URL,
 );
+const THINGSPEAK_API_KEY = import.meta.env?.VITE_THINGSPEAK_API_KEY || "IMHOV9D968D73WWN";
+const THINGSPEAK_CHANNEL_ID = import.meta.env?.VITE_THINGSPEAK_CHANNEL_ID || "3421682";
 const TOKEN_KEY = "stresssense_token";
 const REFRESH_TOKEN_KEY = "stresssense_refresh_token";
 const SESSION_KEY = "stresssense_session_id";
@@ -65,6 +67,96 @@ type PendingQuestionnaire = {
   score: number;
   answers: Record<string, unknown>;
 };
+
+const THINGSPEAK_FIELD_DEFS = [
+  { field: "field1", name: "Mean_Temp", key: "mean_temp", alias: "temperature", unit: "C" },
+  { field: "field2", name: "RMSSD_ms", key: "rmssd_ms", alias: "hrv", unit: "ms" },
+  { field: "field3", name: "SDNN_ms", key: "sdnn_ms", unit: "ms" },
+  { field: "field4", name: "Heart_Rate_bpm", key: "heart_rate_bpm", alias: "heart_rate", unit: "bpm" },
+  { field: "field5", name: "SpO2_percent", key: "spo2_percent", unit: "%" },
+  { field: "field6", name: "SCL_uS", key: "scl_us", alias: "eda", unit: "uS" },
+  { field: "field7", name: "SCR_Peak_Count", key: "scr_peak_count", unit: "count" },
+  { field: "field8", name: "SCR_Mean", key: "scr_mean", unit: "" },
+] as const;
+
+export type PhysiologicalSensorField = {
+  name: string;
+  key: string;
+  field: string;
+  value: number | null;
+  unit: string;
+};
+
+export type PhysiologicalSeriesPoint = {
+  recorded_at: string | null;
+  entry_id?: number | string | null;
+  sensor_fields: PhysiologicalSensorField[];
+};
+
+export type PhysiologicalPayload = {
+  heart_rate?: number | null;
+  hrv?: number | null;
+  eda?: number | null;
+  temperature?: number | null;
+  mean_temp?: number | null;
+  rmssd_ms?: number | null;
+  sdnn_ms?: number | null;
+  heart_rate_bpm?: number | null;
+  spo2_percent?: number | null;
+  scl_us?: number | null;
+  scr_peak_count?: number | null;
+  scr_mean?: number | null;
+  recorded_at?: string | null;
+  signal_quality?: string;
+  sensor_fields?: PhysiologicalSensorField[];
+  series?: PhysiologicalSeriesPoint[];
+  thingspeak?: {
+    channel_id?: string | null;
+    entry_id?: number | string | null;
+    fetched_at?: string | null;
+    raw_fields?: Record<string, unknown>;
+  } | null;
+};
+
+export type PhysiologicalSyncResponse = {
+  status: string;
+  session_id: string;
+  physiological: PhysiologicalPayload | null;
+};
+
+function numberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function normalizeThingSpeakFeed(feed: Record<string, unknown>, channelId = THINGSPEAK_CHANNEL_ID): PhysiologicalPayload {
+  const values: Record<string, number | null> = {};
+  const sensorFields = THINGSPEAK_FIELD_DEFS.map((def) => {
+    const value = numberOrNull(feed[def.field]);
+    values[def.key] = value;
+    if ("alias" in def) values[def.alias] = value;
+    return {
+      name: def.name,
+      key: def.key,
+      field: def.field,
+      value,
+      unit: def.unit,
+    };
+  });
+  const payload: PhysiologicalPayload = {
+    ...values,
+    recorded_at: typeof feed.created_at === "string" ? feed.created_at : new Date().toISOString(),
+    sensor_fields: sensorFields,
+    thingspeak: {
+      channel_id: channelId,
+      entry_id: typeof feed.entry_id === "number" || typeof feed.entry_id === "string" ? feed.entry_id : null,
+      fetched_at: new Date().toISOString(),
+      raw_fields: Object.fromEntries(THINGSPEAK_FIELD_DEFS.map((def) => [def.field, feed[def.field] ?? null])),
+    },
+  };
+  return payload;
+}
 
 function readJson<T>(key: string): T | null {
   try {
@@ -175,7 +267,7 @@ function saveAuth(data: LoginResponse): CurrentParticipant {
 }
 
 function dateText(value?: string | null): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const normalized = /\dT\d/.test(value) && !/[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? `${value}Z` : value;
   const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) return String(value);
@@ -420,21 +512,64 @@ export const api = {
     localStorage.removeItem(PENDING_QUESTIONNAIRE_KEY);
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(SESSION_CODE_KEY);
-    api.activeSessionId = null;
-    api.activeSessionCode = null;
-    return { id: "", session_code: "Pending" };
+    const session = await request<{ id: string; session_code: string }>("/sessions", {
+      method: "POST",
+      body: JSON.stringify({ condition, task }),
+    });
+    api.activeSessionId = session.id;
+    api.activeSessionCode = session.session_code;
+    return session;
   },
   useSession(sessionId?: string | null, sessionCode?: string | null) {
     api.activeSessionId = sessionId || null;
     api.activeSessionCode = sessionCode || null;
   },
-  savePhysiological(condition: "relaxed" | "stress") {
+  savePhysiological(condition: "relaxed" | "stress", durationMinutes = 5): Promise<PhysiologicalSyncResponse | void> {
     const sessionId = api.activeSessionId;
     if (!sessionId) {
       localStorage.setItem(PENDING_PHYSIO_KEY, JSON.stringify({ condition, collected: true }));
       return Promise.resolve();
     }
-    return request(`/sessions/${sessionId}/thingspeak-sync`, { method: "POST" });
+    return request<PhysiologicalSyncResponse>(`/sessions/${sessionId}/thingspeak-sync`, {
+      method: "POST",
+      body: JSON.stringify({ duration_minutes: durationMinutes }),
+    });
+  },
+  async getLatestThingSpeak(): Promise<PhysiologicalPayload> {
+    const url = `https://api.thingspeak.com/channels/${THINGSPEAK_CHANNEL_ID}/feeds.json?api_key=${encodeURIComponent(THINGSPEAK_API_KEY)}&results=1`;
+    let data: { channel?: { id?: number | string }; feeds?: Array<Record<string, unknown>> };
+
+    if (Capacitor.isNativePlatform()) {
+      const response = await CapacitorHttp.get({ url });
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`ThingSpeak request failed (${response.status})`);
+      }
+      data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+    } else {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`ThingSpeak request failed (${response.status})`);
+      data = await response.json();
+    }
+
+    const feed = data.feeds?.[0];
+    if (!feed) throw new Error("ThingSpeak channel has no feed records");
+    return normalizeThingSpeakFeed(feed, String(data.channel?.id || THINGSPEAK_CHANNEL_ID));
+  },
+  saveHealthData(payload: PhysiologicalPayload, condition: "relaxed" | "stress"): Promise<PhysiologicalSyncResponse | void> {
+    const sessionId = api.activeSessionId;
+    if (!sessionId) {
+      localStorage.setItem(PENDING_PHYSIO_KEY, JSON.stringify({ condition, collected: true, physiological: payload }));
+      return Promise.resolve();
+    }
+    const values = Object.fromEntries((payload.sensor_fields || []).map((field) => [field.key, field.value]));
+    return request<PhysiologicalSyncResponse>(`/sessions/${sessionId}/physiological`, {
+      method: "POST",
+      body: JSON.stringify({
+        ...values,
+        recorded_at: payload.recorded_at,
+        thingspeak: payload.thingspeak,
+      }),
+    });
   },
   saveQuestionnaire(score: number, answers: Record<string, unknown>) {
     const sessionId = api.activeSessionId;
@@ -567,7 +702,7 @@ export const api = {
         age: participant.age ?? 0,
         consent: Boolean(participant.consent_completed),
         sessions: total,
-        last: participant.last_session_at ? dateText(participant.last_session_at) : "—",
+        last: participant.last_session_at ? dateText(participant.last_session_at) : "-",
         pct: total > 0 ? Math.round((done / total) * 100) : 0,
       };
     });
@@ -688,7 +823,7 @@ export const api = {
       completed,
       relaxed,
       stress,
-      last: sessions[0]?.date || "—",
+      last: sessions[0]?.date || "-",
     };
   },
 };
