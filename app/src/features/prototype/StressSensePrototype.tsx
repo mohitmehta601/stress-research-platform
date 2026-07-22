@@ -284,8 +284,8 @@ function SignalCard({ label, value, unit, sparkType, color }: { label: string; v
 
 function DataBit({ ok }: { ok: boolean | null }) {
   if (ok === null) return <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>Pend</span>
-  if (ok)          return <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#DCFCE7", color: "#15803D" }}>âœ“</span>
-  return            <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#FEE2E2", color: "#B91C1C" }}>âœ—</span>
+  if (ok)          return <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded" style={{ backgroundColor: "#DCFCE7", color: "#15803D" }}><Check size={12} strokeWidth={3} /></span>
+  return            <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded" style={{ backgroundColor: "#FEE2E2", color: "#B91C1C" }}><X size={12} strokeWidth={3} /></span>
 }
 
 // â”€â”€â”€ Scroll wrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1072,10 +1072,10 @@ function RelaxedInstructionsScreen({ nav }: { nav: Nav }) {
         <Card className="p-4 space-y-3">
           {[
             ["1", "Sit comfortably in a chair with your back supported."],
-            ["2", "Relax your body â€” drop your shoulders and unclench your jaw."],
+            ["2", "Relax your body - drop your shoulders and unclench your jaw."],
             ["3", "Do not talk during the physiological recording phase."],
             ["4", "Keep all sensor cables and devices connected throughout."],
-            ["5", "Breathe normally â€” do not control your breathing artificially."],
+            ["5", "Breathe normally - do not control your breathing artificially."],
           ].map(([n, t]) => (
             <div key={n} className="flex gap-3 items-start">
               <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: GREEN }}>{n}</div>
@@ -1964,7 +1964,7 @@ function QuestionnaireCompleteScreen({ nav }: { nav: Nav }) {
             <span>None</span><span>Moderate</span><span>Extreme</span>
           </div>
           <div className="mt-3 p-3 rounded-xl text-center" style={{ backgroundColor: "#EBF3FF" }}>
-            <p className="text-sm font-bold" style={{ color: BLUE }}>Low â€” Within Normal Range</p>
+            <p className="text-sm font-bold" style={{ color: BLUE }}>Low - Within Normal Range</p>
           </div>
         </Card>
 
@@ -2023,7 +2023,7 @@ function SessionSummaryScreen({ nav, sessionType }: { nav: Nav; sessionType: Ses
             <span className="text-sm font-bold opacity-90">{isRelaxed ? "RELAXED SESSION" : "STRESS SESSION"}</span>
           </div>
           <p className="text-2xl font-black" style={{ fontFamily: "'Outfit', sans-serif" }}>Session Completed</p>
-          <p className="text-sm opacity-75 mt-0.5">Session ID: {sessionCode} Â· Participant: {participant?.participant_code ?? "â€”"}</p>
+          <p className="text-sm opacity-75 mt-0.5">Session ID: {sessionCode} | Participant: {participant?.participant_code ?? "-"}</p>
           <p className="text-xs opacity-60 mt-0.5">{new Date().toLocaleString("en-GB")}</p>
         </div>
 
@@ -2705,7 +2705,7 @@ function ResearcherDashboardScreen({ nav }: { nav: Nav }) {
           {sessions.slice(0, 3).map(s => (
             <div key={s.id} className="flex items-center gap-3 py-2.5 border-b border-gray-50 last:border-0">
               <div>
-                <p className="text-sm font-bold text-gray-800">{s.pid} â€” {s.cond}</p>
+                <p className="text-sm font-bold text-gray-800">{s.pid} - {s.cond}</p>
                 <p className="text-xs text-gray-400">{s.date}</p>
               </div>
               <div className="ml-auto"><StatusBadge status={s.quality} /></div>
@@ -2771,7 +2771,7 @@ function ResearcherParticipantsScreen({ nav }: { nav: Nav }) {
                   <p className="text-sm font-bold text-gray-900">{p.name}</p>
                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ fontFamily: "'JetBrains Mono', monospace", backgroundColor: "#F1F5F9", color: "#64748B" }}>{p.id}</span>
                 </div>
-                <p className="text-xs text-gray-400">{p.gender === "F" ? "Female" : "Male"}, {p.age} yrs Â· Last: {p.last}</p>
+                <p className="text-xs text-gray-400">{p.gender === "F" ? "Female" : "Male"}, {p.age} yrs | Last: {p.last}</p>
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   <StatusBadge status={p.consent ? "Accepted" : "Pending"} />
                   <span className="text-xs text-gray-400">{p.sessions} session{p.sessions !== 1 ? "s" : ""}</span>
@@ -2842,16 +2842,16 @@ function ResearcherSessionsScreen({ nav }: { nav: Nav }) {
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: color }}>{s.cond}</span>
                     <span className="text-xs font-bold" style={{ fontFamily: "'JetBrains Mono', monospace", color: "#64748B" }}>{s.id}</span>
-                    <span className="text-xs text-gray-400">Â· {s.pid}</span>
+                    <span className="text-xs text-gray-400">| {s.pid}</span>
                   </div>
-                  <p className="text-xs text-gray-400 mt-0.5">{s.pname} Â· {s.date}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{s.pname} | {s.date}</p>
                 </div>
                 <StatusBadge status={s.quality} />
               </div>
               <div className="flex gap-1 flex-wrap mb-2">
                 {dataFields.map(([k, v]) => (
                   <div key={k} className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ backgroundColor: v ? "#F0FDF4" : "#FEF2F2", color: v ? GREEN : RED }}>
-                    {k} {v ? "âœ“" : "âœ—"}
+                    {k} {v ? "OK" : "No"}
                   </div>
                 ))}
               </div>
@@ -3211,8 +3211,8 @@ function DataOverviewScreen({ nav }: { nav: Nav }) {
         </Card>
 
         <div className="flex gap-4 px-1 text-xs text-gray-400 font-medium">
-          <span className="flex items-center gap-1"><span className="font-bold text-green-600">âœ“</span> Collected</span>
-          <span className="flex items-center gap-1"><span className="font-bold text-red-500">âœ—</span> Missing</span>
+          <span className="flex items-center gap-1"><Check size={12} className="text-green-600" strokeWidth={3} /> Collected</span>
+          <span className="flex items-center gap-1"><X size={12} className="text-red-500" strokeWidth={3} /> Missing</span>
           <span className="flex items-center gap-1"><span className="font-bold text-orange-500">Pend</span> Awaiting</span>
         </div>
         <div className="h-4" />
@@ -3357,7 +3357,7 @@ export default function App() {
             className="w-9 h-9 rounded-full flex items-center justify-center text-white/60 hover:text-white transition-colors"
             style={{ backgroundColor: "rgba(255,255,255,0.1)" }}
             disabled={idx === 0}>
-            â€¹
+            &lt;
           </button>
           <div className="text-center">
             <p className="text-white text-sm font-semibold">{ALL_SCREENS[idx]?.label}</p>
@@ -3367,7 +3367,7 @@ export default function App() {
             className="w-9 h-9 rounded-full flex items-center justify-center text-white/60 hover:text-white transition-colors"
             style={{ backgroundColor: "rgba(255,255,255,0.1)" }}
             disabled={idx === ALL_SCREENS.length - 1}>
-            â€º
+            &gt;
           </button>
         </div>
 
