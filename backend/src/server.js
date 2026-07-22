@@ -16,6 +16,13 @@ function isAllowedOrigin(origin) {
 
   try {
     const { hostname, protocol } = new URL(origin);
+    if (
+      settings.appEnv !== "production"
+      && ["http:", "https:", "capacitor:"].includes(protocol)
+      && ["localhost", "127.0.0.1", "::1"].includes(hostname)
+    ) {
+      return true;
+    }
     return (
       protocol === "https:"
       && /^stress-research-platform(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(hostname)
@@ -51,8 +58,11 @@ app.use((_req, res) => {
 });
 
 app.use((error, _req, res, _next) => {
-  const status = error.status || 500;
-  const detail = error.detail || error.message || "Internal server error";
+  const isDuplicateKey = error?.code === 11000;
+  const status = isDuplicateKey ? 409 : error.status || 500;
+  const detail = isDuplicateKey
+    ? "A record with the same unique value already exists"
+    : error.detail || error.message || "Internal server error";
   if (status >= 500) console.error(error);
   res.status(status).json({ detail });
 });

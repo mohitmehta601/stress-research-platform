@@ -347,6 +347,16 @@ function publicSession(document) {
   };
 }
 
+async function nextSessionCode(participantId) {
+  const sessions = await ResearchSession.find({ participant_id: participantId }).select("session_code").lean();
+  const used = new Set(sessions.map((session) => String(session.session_code || "").toUpperCase()));
+  for (let index = sessions.length + 1; index < sessions.length + 500; index += 1) {
+    const code = `S${String(index).padStart(2, "0")}`;
+    if (!used.has(code)) return code;
+  }
+  return `S${Date.now()}`;
+}
+
 function hasFilledQuestionnaireAnswers(questionnaire) {
   return Boolean(
     questionnaire
@@ -768,11 +778,19 @@ router.get("/sessions/thingspeak/latest", requireParticipant, asyncHandler(async
 router.post("/sessions", requireParticipant, asyncHandler(async (req, res) => {
   if (req.participant.role !== "participant") throw makeError(403, "Participant access is required");
   if (!req.participant.consent_completed || !req.participant.profile_completed) throw makeError(403, "Consent and profile are required before sessions");
-  const count = await ResearchSession.countDocuments({ participant_id: req.participant._id });
+  if (!["relaxed", "stress"].includes(req.body.condition)) throw makeError(400, "Session condition is required");
+
+  const existing = await ResearchSession.findOne({
+    participant_id: req.participant._id,
+    condition: req.body.condition,
+    status: { $in: ["in_progress", "in-progress", "pending"] }
+  }).sort({ started_at: -1 }).lean();
+  if (existing) return res.json(publicSession(existing));
+
   const now = new Date();
   const session = await ResearchSession.create({
     participant_id: req.participant._id,
-    session_code: `S${String(count + 1).padStart(2, "0")}`,
+    session_code: await nextSessionCode(req.participant._id),
     condition: req.body.condition,
     task: req.body.task,
     status: "in_progress",
@@ -791,7 +809,6 @@ router.post("/sessions/complete-flow", requireParticipant, asyncHandler(async (r
   if (!hasFilledQuestionnaireAnswers({ answers: req.body.questionnaire?.answers })) throw makeError(400, "Complete questionnaire answers are required before saving a session");
 
   const now = new Date();
-  const count = await ResearchSession.countDocuments({ participant_id: req.participant._id });
   const questionnaireValues = Object.values(req.body.questionnaire.answers || {}).filter((value) => typeof value === "number");
   const score = req.body.questionnaire.score ?? (questionnaireValues.length ? Math.round(questionnaireValues.reduce((sum, value) => sum + value, 0) * 100) / 100 : null);
   let physiological = null;
@@ -817,7 +834,7 @@ router.post("/sessions/complete-flow", requireParticipant, asyncHandler(async (r
 
   const session = await ResearchSession.create({
     participant_id: req.participant._id,
-    session_code: `S${String(count + 1).padStart(2, "0")}`,
+    session_code: await nextSessionCode(req.participant._id),
     condition: req.body.condition,
     task: req.body.task,
     status: "completed",
@@ -831,6 +848,7 @@ router.post("/sessions/complete-flow", requireParticipant, asyncHandler(async (r
     updated_at: now
   });
 
+  await upsertPhysiologicalRecord(session, physiological);
   await upsertQuestionnaireResponse(session, questionnaire);
   await createNotification("research_session_completed", "Research session completed", `${session.session_code} completed by ${req.participant.participant_code || "participant"}.`, session._id);
   res.status(201).json(publicSession(session));

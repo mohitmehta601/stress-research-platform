@@ -1669,44 +1669,80 @@ function StressTaskScreen({ nav, task = 0 }: { nav: Nav; task?: number }) {
 
 // SCREEN 12 â€” Stress Recording
 function StressRecordingScreen({ nav }: { nav: Nav }) {
-  const [seconds, setSeconds] = useState(275)
+  const RECORDING_SECONDS = 300
+  const [seconds, setSeconds] = useState(RECORDING_SECONDS)
   const [running, setRunning] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+  const [physiological, setPhysiological] = useState<PhysiologicalPayload | null>(null)
   useEffect(() => {
     if (!running) return
     const id = setInterval(() => setSeconds(s => s > 0 ? s - 1 : 0), 1000)
     return () => clearInterval(id)
   }, [running])
+  useEffect(() => {
+    if (seconds === 0) setRunning(false)
+  }, [seconds])
+  const refreshValues = async () => {
+    setRefreshing(true)
+    setError("")
+    try {
+      const latest = await api.getLatestThingSpeak()
+      setPhysiological(latest)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not fetch ThingSpeak data")
+    } finally {
+      setRefreshing(false)
+    }
+  }
+  useEffect(() => {
+    void refreshValues()
+  }, [])
+  const saveHealthData = async () => {
+    setRunning(false)
+    setSaving(true)
+    setError("")
+    try {
+      const latest = physiological ?? await api.getLatestThingSpeak()
+      setPhysiological(latest)
+      const result = await api.saveHealthData(latest, "stress")
+      if (result?.physiological) setPhysiological(result.physiological)
+      nav("audio-recording", { sessionType: "stress" })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save health data")
+    } finally {
+      setSaving(false)
+    }
+  }
   const mins = String(Math.floor(seconds / 60)).padStart(2, "0")
   const secs = String(seconds % 60).padStart(2, "0")
-  const pct = (seconds / 300) * 100
-  const signals = [
-    { label: "Mean Temp", value: "37.1", unit: "C", sparkType: "temp", color: "#7C3AED" },
-    { label: "RMSSD", value: "28", unit: "ms", sparkType: "hrv", color: ORANGE },
-    { label: "SDNN", value: "34", unit: "ms", sparkType: "hrv", color: BLUE },
-    { label: "Heart Rate", value: "94", unit: "bpm", sparkType: "heart", color: RED },
-    { label: "SpO2", value: "97", unit: "%", sparkType: "heart", color: GREEN },
-    { label: "SCL", value: "5.12", unit: "uS", sparkType: "eda", color: ORANGE },
+  const pct = (seconds / RECORDING_SECONDS) * 100
+  const expectedFields: PhysiologicalSensorField[] = [
+    { field: "field1", key: "mean_temp", name: "Mean_Temp", value: null, unit: "C" },
+    { field: "field2", key: "rmssd_ms", name: "RMSSD_ms", value: null, unit: "ms" },
+    { field: "field3", key: "sdnn_ms", name: "SDNN_ms", value: null, unit: "ms" },
+    { field: "field4", key: "heart_rate_bpm", name: "Heart_Rate_bpm", value: null, unit: "bpm" },
+    { field: "field5", key: "spo2_percent", name: "SpO2_percent", value: null, unit: "%" },
+    { field: "field6", key: "scl_us", name: "SCL_uS", value: null, unit: "uS" },
+    { field: "field7", key: "scr_peak_count", name: "SCR_Peak_Count", value: null, unit: "count" },
+    { field: "field8", key: "scr_mean", name: "SCR_Mean", value: null, unit: "" },
   ]
-  const displaySignals = [
-    { label: "Temp", value: "37.1", unit: "C", sparkType: "temp", color: "#7C3AED" },
-    { label: "RMSSD", value: "28", unit: "ms", sparkType: "hrv", color: ORANGE },
-    { label: "SDNN", value: "34", unit: "ms", sparkType: "hrv", color: BLUE },
-    { label: "HR", value: "94", unit: "bpm", sparkType: "heart", color: RED },
-    { label: "SpO2", value: "97", unit: "%", sparkType: "heart", color: GREEN },
-    { label: "SCL", value: "5.12", unit: "uS", sparkType: "eda", color: ORANGE },
-  ]
+  const fetchedFields = physiological?.sensor_fields ?? []
+  const fields = expectedFields.map(field => fetchedFields.find(item => item.field === field.field || item.key === field.key) ?? field)
+  const colors = [ORANGE, BLUE, "#7C3AED", RED, GREEN, TEAL, "#0F766E", "#64748B"]
+  const statusText = refreshing
+    ? "Refreshing ThingSpeak values"
+    : physiological
+      ? "ThingSpeak values loaded"
+      : "Ready to refresh values"
   return (
     <div className="flex flex-col h-full bg-[#F0F4F8]">
       <NavBar title="Stress Session" subtitle="Physiological Recording" onBack={() => nav("stress-task")} />
-      <ScrollArea className="px-4 py-4 space-y-3">
-        <Card className="p-3 flex items-center gap-2" style={{ backgroundColor: "#FEF2F2", borderColor: "#FECACA" }}>
-          <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: RED }} />
-          <p className="text-xs font-bold text-red-700">Stress condition recording in progress.</p>
-        </Card>
-
+      <ScrollArea className="px-4 py-4 space-y-4">
         <Card className="p-5 flex flex-col items-center">
           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Remaining Time</p>
-          <div className="relative w-28 h-28 flex items-center justify-center">
+          <div className="relative w-36 h-36 flex items-center justify-center">
             <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 100 100">
               <circle cx="50" cy="50" r="44" fill="none" stroke="#FEE2E2" strokeWidth="8" />
               <circle cx="50" cy="50" r="44" fill="none" stroke={RED} strokeWidth="8" strokeLinecap="round"
@@ -1715,28 +1751,37 @@ function StressRecordingScreen({ nav }: { nav: Nav }) {
                 style={{ transition: "stroke-dashoffset 1s linear" }} />
             </svg>
             <div className="text-center">
-              <p className="text-2xl font-bold" style={{ fontFamily: "'JetBrains Mono', monospace", color: RED }}>{mins}:{secs}</p>
+              <p className="text-3xl font-bold" style={{ fontFamily: "'JetBrains Mono', monospace", color: RED }}>{mins}:{secs}</p>
+              <p className="text-xs text-gray-400 mt-1">remaining</p>
             </div>
           </div>
-          <div className="hidden">
-            <div className="text-center p-2 rounded-xl bg-red-50">
-              <p className="text-xs text-gray-400">Battery</p><p className="text-sm font-bold" style={{ color: RED }}>82%</p>
-            </div>
-            <div className="text-center p-2 rounded-xl bg-red-50">
-              <p className="text-xs text-gray-400">Signal</p><p className="text-sm font-bold" style={{ color: ORANGE }}>Moderate</p>
-            </div>
+          <div className="flex items-center gap-2 mt-4">
+            <div className={`w-2 h-2 rounded-full ${refreshing ? "animate-pulse" : ""}`} style={{ backgroundColor: physiological ? RED : refreshing ? BLUE : ORANGE }} />
+            <span className="text-xs font-semibold" style={{ color: physiological ? RED : refreshing ? BLUE : ORANGE }}>{statusText}</span>
           </div>
         </Card>
 
         <div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 px-0.5">Live Signals</p>
+          <div className="flex items-center justify-between mb-2 px-0.5">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">ThingSpeak Values</p>
+            <button onClick={refreshValues} disabled={refreshing || saving} className="px-3 py-1.5 rounded-lg text-xs font-bold text-white disabled:opacity-60 flex items-center gap-1.5" style={{ backgroundColor: BLUE }}>
+              <RotateCcw size={12} />Refresh
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-2">
-            {displaySignals.map(s => <SignalCard key={s.label} {...s} />)}
+            {fields.map((field, index) => <FieldSignalCard key={field.key} field={field} color={colors[index % colors.length]} />)}
           </div>
         </div>
 
-        <button onClick={async () => { await api.savePhysiological("stress"); nav("audio-recording", { sessionType: "stress" }) }} className="w-full py-3.5 rounded-xl font-semibold text-white text-[15px] flex items-center justify-center gap-2" style={{ backgroundColor: RED }}>
-          <Square size={16} />Stop Recording
+        {error && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl p-2">{error}</p>}
+
+        <button
+          onClick={saveHealthData}
+          disabled={saving || refreshing}
+          className="w-full py-3.5 rounded-xl font-semibold text-white text-[15px] flex items-center justify-center gap-2 disabled:opacity-60"
+          style={{ backgroundColor: RED }}
+        >
+          <Save size={16} />{saving ? "Saving Health Data..." : "Save Health Data"}
         </button>
         <div className="h-2" />
       </ScrollArea>
