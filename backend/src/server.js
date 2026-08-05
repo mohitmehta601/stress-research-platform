@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
+import mongoose from "mongoose";
 import { settings } from "./config/settings.js";
 import { connectDatabase, disconnectDatabase, ensureIndexes } from "./config/database.js";
 import { models } from "./models/index.js";
@@ -49,7 +50,19 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(morgan(settings.appEnv === "production" ? "combined" : "dev"));
 
-app.get("/health", (_req, res) => res.json({ status: "ok", database: "mongodb" }));
+function healthCheck(_req, res) {
+  const databaseConnected = mongoose.connection.readyState === 1;
+  res.status(databaseConnected ? 200 : 503).json({
+    status: databaseConnected ? "ok" : "degraded",
+    service: "backend",
+    database: databaseConnected ? "connected" : "disconnected",
+    uptime_seconds: Math.round(process.uptime()),
+    timestamp: new Date().toISOString()
+  });
+}
+
+app.get("/health", healthCheck);
+app.get(`${settings.apiPrefix}/health`, healthCheck);
 app.get("/", (_req, res) => res.redirect(`${settings.frontendUrl.replace(/\/$/, "")}/researcher/login`));
 app.use(settings.apiPrefix, apiRouter);
 
@@ -68,9 +81,15 @@ app.use((error, _req, res, _next) => {
 });
 
 async function start() {
-  await connectDatabase();
-  await ensureIndexes(models);
-  await bootstrapResearcher();
+  try {
+    await connectDatabase();
+    await ensureIndexes(models);
+    await bootstrapResearcher();
+  } catch (error) {
+    if (settings.appEnv === "production") throw error;
+    console.error("Database initialization failed; starting API in degraded mode", error);
+  }
+
   const server = app.listen(settings.port, () => {
     console.log(`${settings.appName} listening on http://127.0.0.1:${settings.port}`);
   });
