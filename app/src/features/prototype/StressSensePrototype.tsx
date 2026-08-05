@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts"
 import { api, type MobileParticipant, type MobileSession, type PhysiologicalPayload, type PhysiologicalSensorField } from "../../services/apiClient"
+import { AudioStorageError, ensureAudioStoragePermission, openAudioStorageSettings, saveRecordingToPhone, type SavedAudio } from "../../services/audioStorageService"
 
 // â”€â”€â”€ Design constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const NAVY = "#0B1E3D"
@@ -1794,9 +1795,13 @@ function AudioRecordingScreen({ nav, sessionType }: { nav: Nav; sessionType: Ses
   const isRelaxed = sessionType === "relaxed"
   const color = isRelaxed ? GREEN : ORANGE
   const [recording, setRecording] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [audioUrl, setAudioUrl] = useState("")
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
+  const [savedAudio, setSavedAudio] = useState<SavedAudio | null>(null)
   const [error, setError] = useState("")
+  const [canOpenSettings, setCanOpenSettings] = useState(false)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -1816,13 +1821,17 @@ function AudioRecordingScreen({ nav, sessionType }: { nav: Nav; sessionType: Ses
 
   const startRecording = async () => {
     setError("")
+    setCanOpenSettings(false)
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setError("Audio recording is not supported in this browser.")
       return
     }
     try {
+      await ensureAudioStoragePermission()
       if (audioUrl) URL.revokeObjectURL(audioUrl)
       setAudioUrl("")
+      setAudioBlob(null)
+      setSavedAudio(null)
       setElapsed(0)
       chunksRef.current = []
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -1834,14 +1843,19 @@ function AudioRecordingScreen({ nav, sessionType }: { nav: Nav; sessionType: Ses
       }
       recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" })
+        setAudioBlob(blob)
         setAudioUrl(URL.createObjectURL(blob))
         stream.getTracks().forEach((track) => track.stop())
         streamRef.current = null
       }
       recorder.start()
       setRecording(true)
-    } catch {
-      setError("Microphone permission was blocked. Allow microphone access and try again.")
+    } catch (err) {
+      const message = err instanceof AudioStorageError
+        ? err.message
+        : "Microphone permission was denied. Allow microphone access for StressSense and try again."
+      setCanOpenSettings(err instanceof AudioStorageError && err.code === "permission_permanently_denied")
+      setError(message)
     }
   }
 
@@ -1850,28 +1864,52 @@ function AudioRecordingScreen({ nav, sessionType }: { nav: Nav; sessionType: Ses
     setRecording(false)
   }
 
-  const saveAndContinue = () => {
-    if (!audioUrl && !recording) {
+  const saveAndContinue = async () => {
+    if (!audioBlob && !recording) {
       setError("Record the voice sample before continuing.")
       return
     }
     if (recording) stopRecording()
-    localStorage.setItem(`stresssense_audio_${api.activeSessionId ?? "current"}`, "collected")
-    nav("questionnaire", { sessionType })
+    if (!audioBlob) return
+
+    const participant = api.currentParticipant
+    setSaving(true)
+    setError("")
+    setCanOpenSettings(false)
+    try {
+      const result = await saveRecordingToPhone({
+        blob: audioBlob,
+        pid: participant?.participant_code ?? "",
+        personName: participant?.name ?? "",
+        sessionType,
+      })
+      setSavedAudio(result)
+      localStorage.setItem(`stresssense_audio_${api.activeSessionId ?? "current"}`, JSON.stringify(result))
+      window.setTimeout(() => nav("questionnaire", { sessionType }), 1400)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Audio could not be saved to phone storage."
+      setCanOpenSettings(err instanceof AudioStorageError && err.code === "permission_permanently_denied")
+      setError(message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const resetRecording = () => {
     if (recording) stopRecording()
     if (audioUrl) URL.revokeObjectURL(audioUrl)
     setAudioUrl("")
+    setAudioBlob(null)
+    setSavedAudio(null)
     setElapsed(0)
     setError("")
+    setCanOpenSettings(false)
   }
 
   const timeText = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`
   const bars = [18, 34, 24, 52, 31, 68, 42, 26, 58, 36, 74, 46, 30, 62, 40, 20]
   const statusText = recording ? "Recording in progress" : audioUrl ? "Voice sample captured" : "Ready to record"
-  const canContinue = Boolean(audioUrl) && !recording
+  const canContinue = Boolean(audioBlob) && !recording && !saving
 
   return (
     <div className="flex flex-col h-full bg-[#F0F4F8]">
@@ -1926,6 +1964,22 @@ function AudioRecordingScreen({ nav, sessionType }: { nav: Nav; sessionType: Ses
         {error && (
           <div className="rounded-xl border border-red-100 bg-red-50 p-3">
             <p className="text-xs font-semibold text-red-700">{error}</p>
+            {canOpenSettings && (
+              <button
+                onClick={() => openAudioStorageSettings()}
+                className="mt-2 text-xs font-bold underline"
+                style={{ color: RED }}
+              >
+                Open app settings
+              </button>
+            )}
+          </div>
+        )}
+
+        {savedAudio && (
+          <div className="rounded-xl border border-green-100 bg-green-50 p-3">
+            <p className="text-xs font-semibold text-green-800">Saved {savedAudio.fileName}</p>
+            <p className="text-[11px] text-green-700 mt-1 break-words">{savedAudio.location}</p>
           </div>
         )}
 
@@ -1963,7 +2017,7 @@ function AudioRecordingScreen({ nav, sessionType }: { nav: Nav; sessionType: Ses
           className={`w-full h-14 rounded-2xl font-bold text-base flex items-center justify-center gap-2 active:opacity-80 ${canContinue ? "text-white" : "text-slate-400 bg-slate-200"}`}
           style={canContinue ? { backgroundColor: BLUE } : undefined}
         >
-          <Save size={19} /> Save Audio & Continue
+          <Save size={19} /> {saving ? "Saving Audio..." : "Save Audio & Continue"}
         </button>
         <div className="h-2" />
       </ScrollArea>
