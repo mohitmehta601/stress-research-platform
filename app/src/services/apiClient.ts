@@ -18,6 +18,7 @@ const USER_KEY = "stresssense_user";
 const PENDING_SESSION_KEY = "stresssense_pending_session";
 const PENDING_PHYSIO_KEY = "stresssense_pending_physiological";
 const PENDING_QUESTIONNAIRE_KEY = "stresssense_pending_questionnaire";
+const PENDING_AUDIO_KEY = "stresssense_pending_audio";
 const IST_TIME_ZONE = "Asia/Kolkata";
 let accessToken: string | null =
   typeof window === "undefined" ? null : localStorage.getItem(TOKEN_KEY);
@@ -66,6 +67,13 @@ type PendingSession = {
 type PendingQuestionnaire = {
   score: number;
   answers: Record<string, unknown>;
+};
+
+export type AudioMetadataPayload = {
+  fileName: string;
+  location: string;
+  uri: string;
+  sessionType: "relaxed" | "stress";
 };
 
 const THINGSPEAK_FIELD_DEFS = [
@@ -170,6 +178,7 @@ function clearPendingSessionData() {
   localStorage.removeItem(PENDING_SESSION_KEY);
   localStorage.removeItem(PENDING_PHYSIO_KEY);
   localStorage.removeItem(PENDING_QUESTIONNAIRE_KEY);
+  localStorage.removeItem(PENDING_AUDIO_KEY);
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(SESSION_CODE_KEY);
 }
@@ -510,6 +519,7 @@ export const api = {
     localStorage.setItem(PENDING_SESSION_KEY, JSON.stringify(pending));
     localStorage.removeItem(PENDING_PHYSIO_KEY);
     localStorage.removeItem(PENDING_QUESTIONNAIRE_KEY);
+    localStorage.removeItem(PENDING_AUDIO_KEY);
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(SESSION_CODE_KEY);
     const session = await request<{ id: string; session_code: string }>("/sessions", {
@@ -571,6 +581,25 @@ export const api = {
       }),
     });
   },
+  saveAudioMetadata(payload: AudioMetadataPayload) {
+    const sessionId = api.activeSessionId;
+    const audio = {
+      file_name: payload.fileName,
+      location: payload.location,
+      uri: payload.uri,
+      session_type: payload.sessionType,
+      storage: "offline_phone",
+      saved_at: new Date().toISOString(),
+    };
+    if (!sessionId) {
+      localStorage.setItem(PENDING_AUDIO_KEY, JSON.stringify(audio));
+      return Promise.resolve();
+    }
+    return request(`/sessions/${sessionId}/audio`, {
+      method: "POST",
+      body: JSON.stringify(audio),
+    });
+  },
   saveQuestionnaire(score: number, answers: Record<string, unknown>) {
     const sessionId = api.activeSessionId;
     if (!sessionId) {
@@ -593,6 +622,7 @@ export const api = {
     if (!sessionId) {
       const pendingSession = readJson<PendingSession>(PENDING_SESSION_KEY);
       const pendingQuestionnaire = readJson<PendingQuestionnaire>(PENDING_QUESTIONNAIRE_KEY);
+      const pendingAudio = readJson<Record<string, unknown>>(PENDING_AUDIO_KEY);
       if (!pendingSession || !pendingQuestionnaire || Object.keys(pendingQuestionnaire.answers || {}).length === 0) {
         throw new Error("Complete the full session flow before saving.");
       }
@@ -601,6 +631,7 @@ export const api = {
         body: JSON.stringify({
           ...pendingSession,
           physiological_collected: Boolean(localStorage.getItem(PENDING_PHYSIO_KEY)),
+          audio: pendingAudio || null,
           questionnaire: {
             questionnaire_key: "msaq-v1",
             answers: pendingQuestionnaire.answers,

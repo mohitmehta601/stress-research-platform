@@ -2,6 +2,19 @@ import { Participant, ResearchSession, Physiological, QuestionnaireResponse, Doc
 import { csvResponse, formatDateTimeIST } from "../utils/format.js";
 
 const participantFilter = { role: "participant" };
+const SESSION_EXPORT_FIELDS = [
+  "Participant_ID",
+  "Participant_name",
+  "Session_ID",
+  "Condition",
+  "Status",
+  "Date and Time",
+  "Duration Seconds",
+  "Task/Notes",
+  "Physiological Data",
+  "Audio Data",
+  "Questionnaire completed"
+];
 const PARTICIPANT_EXPORT_FIELDS = [
   "ParticipantID",
   "ParticipantObjectID",
@@ -100,25 +113,43 @@ export async function participantRows() {
   });
 }
 
+function formatDurationHHMMSS(seconds) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) return "";
+  const totalSeconds = Math.max(0, Math.floor(Number(seconds)));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+  return [hours, minutes, remainingSeconds]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
+}
+
+function taken(value) {
+  return value ? "Taken" : "Not Taken";
+}
+
 export async function sessionRows() {
   const [sessions, participants] = await Promise.all([
     ResearchSession.find({}).sort({ started_at: -1 }).lean(),
     Participant.find({}).lean()
   ]);
-  const codes = new Map(participants.map((item) => [String(item._id), item.participant_code || ""]));
-  return sessions.map((item) => ({
-    SessionID: item.session_code || String(item._id || ""),
-    SessionObjectID: String(item._id || ""),
-    ParticipantID: codes.get(String(item.participant_id)) || "",
-    ParticipantObjectID: String(item.participant_id || ""),
-    Condition: item.condition || "",
-    Task: item.task || "",
-    Status: item.status || "",
-    SignalQuality: item.signal_quality || "",
-    StartedAt: item.started_at || "",
-    CompletedAt: item.completed_at || "",
-    DurationSeconds: item.duration_seconds || ""
-  }));
+  const people = new Map(participants.map((item) => [String(item._id), item]));
+  return sessions.map((item) => {
+    const person = people.get(String(item.participant_id)) || {};
+    return {
+      Participant_ID: person.participant_code || String(item.participant_id || ""),
+      Participant_name: person.name || "",
+      Session_ID: item.session_code || String(item._id || ""),
+      Condition: item.condition || "",
+      Status: item.status || "",
+      "Date and Time": item.started_at ? formatDateTimeIST(item.started_at) : "",
+      "Duration Seconds": formatDurationHHMMSS(item.duration_seconds),
+      "Task/Notes": item.task || "",
+      "Physiological Data": taken(Boolean(item.physiological)),
+      "Audio Data": taken(Boolean(item.audio || item.audio_data || item.audio_recording || item.audio_url || item.audio_file || item.audio_path)),
+      "Questionnaire completed": item.questionnaire ? "Completed" : "Not Taken"
+    };
+  });
 }
 
 export async function physiologicalRows() {
@@ -257,8 +288,8 @@ export async function finalDatasetRows() {
 export const EXPORTS = {
   "participant.csv": [participantRows, PARTICIPANT_EXPORT_FIELDS],
   "participant_profile.csv": [participantRows, PARTICIPANT_EXPORT_FIELDS],
-  "session.csv": [sessionRows, ["SessionID", "SessionObjectID", "ParticipantID", "ParticipantObjectID", "Condition", "Task", "Status", "SignalQuality", "StartedAt", "CompletedAt", "DurationSeconds"]],
-  "research_sessions.csv": [sessionRows, ["SessionID", "SessionObjectID", "ParticipantID", "Condition", "Task", "Status", "StartedAt", "CompletedAt", "DurationSeconds"]],
+  "session.csv": [sessionRows, SESSION_EXPORT_FIELDS],
+  "research_sessions.csv": [sessionRows, SESSION_EXPORT_FIELDS],
   "physiological.csv": [physiologicalRows, ["Participant_ID", "Name_Participant", "Session_ID", "Condition", "Mean_Temp", "RMSSD_ms", "SDNN_ms", "Heart_Rate_bpm", "SpO2_percent", "SCL_uS", "SCR_Peak_Count", "SCR_Mean", "Recorder_AT"]],
   "questionnaire.csv": [questionnaireRows, ["Participant_ID", "Name_Participant", "Session_ID", "Condition", "Score", "Submitted_At"]],
   "doctor.csv": [doctorRows, ["id", "session_id", "participant_id", "clinical_stress", "comments", "recommendation", "created_at", "updated_at"]],

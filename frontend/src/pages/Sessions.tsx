@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Edit3, Plus, Save, Search, X } from "lucide-react";
+import { Edit3, Plus, RotateCcw, Save, Search, X } from "lucide-react";
 import {
   createSession,
+  getLatestThingSpeakReading,
   getParticipants,
   getSessions,
   updateSession,
   type ManualSessionPayload,
 } from "../services/apiClient";
-import type { Participant, Session } from "../types";
-import { assessmentBadge, conditionBadge, qualityBadge, sessionStatusBadge } from "../components/StatusBadge";
+import type { Participant, SensorSnapshot, Session } from "../types";
+import { conditionBadge, sessionStatusBadge } from "../components/StatusBadge";
 
 type SessionForm = {
   participant_id: string;
@@ -19,13 +20,14 @@ type SessionForm = {
   date: string;
   time: string;
   duration_seconds: string;
-  signal_quality: "" | "good" | "moderate" | "poor";
-  ecg_collected: boolean;
-  heart_rate: string;
-  hrv: string;
-  eda: string;
-  temperature: string;
-  respiration: string;
+  mean_temp: string;
+  rmssd_ms: string;
+  sdnn_ms: string;
+  heart_rate_bpm: string;
+  spo2_percent: string;
+  scl_us: string;
+  scr_peak_count: string;
+  scr_mean: string;
   questionnaire_completed: boolean;
   questionnaire_score: string;
   doctor_assessment_completed: boolean;
@@ -41,13 +43,14 @@ const emptyForm: SessionForm = {
   date: "",
   time: "",
   duration_seconds: "",
-  signal_quality: "",
-  ecg_collected: false,
-  heart_rate: "",
-  hrv: "",
-  eda: "",
-  temperature: "",
-  respiration: "",
+  mean_temp: "",
+  rmssd_ms: "",
+  sdnn_ms: "",
+  heart_rate_bpm: "",
+  spo2_percent: "",
+  scl_us: "",
+  scr_peak_count: "",
+  scr_mean: "",
   questionnaire_completed: false,
   questionnaire_score: "",
   doctor_assessment_completed: false,
@@ -58,6 +61,10 @@ function numberOrNull(value: string): number | null {
   if (!value.trim()) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sensorValueToField(value: number | null | undefined): string {
+  return value === null || value === undefined ? "" : String(value);
 }
 
 function toIso(date: string, time: string): string | null {
@@ -77,17 +84,18 @@ function formFromSession(session?: Session | null): SessionForm {
     session_code: session.id === "Unknown" ? "" : session.id,
     condition: session.condition,
     status: session.status,
-    task: "",
+    task: session.task ?? "",
     date: session.date || "",
     time: session.time || "",
-    duration_seconds: "",
-    signal_quality: session.signalQuality || "",
-    ecg_collected: session.ecgCollected,
-    heart_rate: session.avgHeartRate === null ? "" : String(session.avgHeartRate),
-    hrv: session.hrv === null ? "" : String(session.hrv),
-    eda: session.eda === null ? "" : String(session.eda),
-    temperature: session.temp === null ? "" : String(session.temp),
-    respiration: session.respiration === null || session.respiration === undefined ? "" : String(session.respiration),
+    duration_seconds: session.durationSeconds === null ? "" : String(session.durationSeconds),
+    mean_temp: session.temp === null ? "" : String(session.temp),
+    rmssd_ms: session.rmssdMs === null || session.rmssdMs === undefined ? "" : String(session.rmssdMs),
+    sdnn_ms: session.sdnnMs === null || session.sdnnMs === undefined ? "" : String(session.sdnnMs),
+    heart_rate_bpm: session.avgHeartRate === null ? "" : String(session.avgHeartRate),
+    spo2_percent: session.spo2Percent === null || session.spo2Percent === undefined ? "" : String(session.spo2Percent),
+    scl_us: session.sclUs === null || session.sclUs === undefined ? "" : String(session.sclUs),
+    scr_peak_count: session.scrPeakCount === null || session.scrPeakCount === undefined ? "" : String(session.scrPeakCount),
+    scr_mean: session.scrMean === null || session.scrMean === undefined ? "" : String(session.scrMean),
     questionnaire_completed: session.questionnaireCompleted,
     questionnaire_score: session.stressScore === null || session.stressScore === undefined ? "" : String(session.stressScore),
     doctor_assessment_completed: session.doctorAssessmentStatus === "completed",
@@ -102,6 +110,24 @@ function payloadFromForm(form: SessionForm): ManualSessionPayload {
   const completedAt = form.status === "completed" && startedAt && duration
     ? new Date(new Date(startedAt).getTime() + duration * 1000).toISOString()
     : null;
+  const meanTemp = numberOrNull(form.mean_temp);
+  const rmssdMs = numberOrNull(form.rmssd_ms);
+  const sdnnMs = numberOrNull(form.sdnn_ms);
+  const heartRateBpm = numberOrNull(form.heart_rate_bpm);
+  const spo2Percent = numberOrNull(form.spo2_percent);
+  const sclUs = numberOrNull(form.scl_us);
+  const scrPeakCount = numberOrNull(form.scr_peak_count);
+  const scrMean = numberOrNull(form.scr_mean);
+  const hasPhysiologicalValue = [
+    meanTemp,
+    rmssdMs,
+    sdnnMs,
+    heartRateBpm,
+    spo2Percent,
+    sclUs,
+    scrPeakCount,
+    scrMean,
+  ].some((value) => value !== null);
   return {
     participant_id: form.participant_id,
     session_code: form.session_code.trim() || undefined,
@@ -111,13 +137,20 @@ function payloadFromForm(form: SessionForm): ManualSessionPayload {
     started_at: startedAt,
     completed_at: completedAt,
     duration_seconds: duration,
-    signal_quality: form.signal_quality || null,
-    ecg_collected: form.ecg_collected,
-    heart_rate: numberOrNull(form.heart_rate),
-    hrv: numberOrNull(form.hrv),
-    eda: numberOrNull(form.eda),
-    temperature: numberOrNull(form.temperature),
-    respiration: numberOrNull(form.respiration),
+    signal_quality: null,
+    ecg_collected: hasPhysiologicalValue,
+    heart_rate: heartRateBpm,
+    hrv: rmssdMs,
+    eda: sclUs,
+    temperature: meanTemp,
+    mean_temp: meanTemp,
+    rmssd_ms: rmssdMs,
+    sdnn_ms: sdnnMs,
+    heart_rate_bpm: heartRateBpm,
+    spo2_percent: spo2Percent,
+    scl_us: sclUs,
+    scr_peak_count: scrPeakCount,
+    scr_mean: scrMean,
     questionnaire_completed: form.questionnaire_completed,
     questionnaire_score: numberOrNull(form.questionnaire_score),
     doctor_assessment_completed: form.doctor_assessment_completed,
@@ -132,9 +165,21 @@ function CheckIcon({ value }: { value: boolean | null }) {
     : <span className="font-mono text-xs text-red-500">×</span>;
 }
 
-function Metric({ value, unit }: { value: number | null; unit: string }) {
-  if (value === null) return <span className="font-mono text-[10px] text-red-400">missing</span>;
-  return <span className="font-mono text-[10px] text-foreground">{value} <span className="text-muted-foreground">{unit}</span></span>;
+function TakenLabel({ value, takenText = "Taken" }: { value: boolean; takenText?: string }) {
+  return value
+    ? <span className="font-mono text-xs text-emerald-600">{takenText}</span>
+    : <span className="font-mono text-xs text-red-500">Not Taken</span>;
+}
+
+function formatDuration(seconds: number | null): string {
+  if (seconds === null || !Number.isFinite(seconds)) return "-";
+  const totalSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+  return [hours, minutes, remainingSeconds]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
 }
 
 function TextField({
@@ -255,12 +300,44 @@ function SessionEditor({
     return initial;
   });
   const [saving, setSaving] = useState(false);
+  const [fetchingValues, setFetchingValues] = useState(false);
   const [error, setError] = useState("");
   const isEdit = Boolean(session);
 
   const patch = <K extends keyof SessionForm>(key: K, value: SessionForm[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
+
+  function applySensorSnapshot(snapshot: SensorSnapshot) {
+    setForm((current) => ({
+      ...current,
+      mean_temp: sensorValueToField(snapshot.meanTemp),
+      rmssd_ms: sensorValueToField(snapshot.rmssdMs),
+      sdnn_ms: sensorValueToField(snapshot.sdnnMs),
+      heart_rate_bpm: sensorValueToField(snapshot.heartRateBpm),
+      spo2_percent: sensorValueToField(snapshot.spo2Percent),
+      scl_us: sensorValueToField(snapshot.sclUs),
+      scr_peak_count: sensorValueToField(snapshot.scrPeakCount),
+      scr_mean: sensorValueToField(snapshot.scrMean),
+    }));
+  }
+
+  async function fetchValues() {
+    setError("");
+    setFetchingValues(true);
+    try {
+      const latest = await getLatestThingSpeakReading();
+      if (!latest) {
+        setError("No ThingSpeak values were returned.");
+        return;
+      }
+      applySensorSnapshot(latest);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not fetch physiological values.");
+    } finally {
+      setFetchingValues(false);
+    }
+  }
 
   async function save() {
     setError("");
@@ -338,26 +415,27 @@ function SessionEditor({
           </section>
 
           <section className="space-y-3">
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Physiological data</div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Physiological data</div>
+              <button
+                type="button"
+                onClick={fetchValues}
+                disabled={fetchingValues}
+                className="inline-flex items-center gap-1.5 rounded border border-border bg-background px-2.5 py-1.5 text-[10px] font-semibold text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <RotateCcw size={12} className={fetchingValues ? "animate-spin" : ""} />
+                {fetchingValues ? "Fetching..." : "Fetch Values"}
+              </button>
+            </div>
             <div className="grid grid-cols-3 gap-3">
-              <label className="flex items-center gap-2 rounded border border-border bg-background px-3 py-2 text-xs">
-                <input type="checkbox" checked={form.ecg_collected} onChange={(e) => patch("ecg_collected", e.target.checked)} />
-                ECG collected
-              </label>
-              <label className="space-y-1">
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Quality</span>
-                <select className="w-full rounded border border-border bg-background px-3 py-2 text-xs" value={form.signal_quality} onChange={(e) => patch("signal_quality", e.target.value as SessionForm["signal_quality"])}>
-                  <option value="">Pending</option>
-                  <option value="good">Good</option>
-                  <option value="moderate">Moderate</option>
-                  <option value="poor">Poor</option>
-                </select>
-              </label>
-              <TextField label="Heart rate" value={form.heart_rate} type="number" onChange={(value) => patch("heart_rate", value)} />
-              <TextField label="HRV" value={form.hrv} type="number" onChange={(value) => patch("hrv", value)} />
-              <TextField label="EDA" value={form.eda} type="number" onChange={(value) => patch("eda", value)} />
-              <TextField label="Temperature" value={form.temperature} type="number" onChange={(value) => patch("temperature", value)} />
-              <TextField label="Respiration" value={form.respiration} type="number" onChange={(value) => patch("respiration", value)} />
+              <TextField label="Mean Temp" value={form.mean_temp} type="number" onChange={(value) => patch("mean_temp", value)} />
+              <TextField label="RMSSD" value={form.rmssd_ms} type="number" onChange={(value) => patch("rmssd_ms", value)} />
+              <TextField label="SDNN" value={form.sdnn_ms} type="number" onChange={(value) => patch("sdnn_ms", value)} />
+              <TextField label="Heart Rate" value={form.heart_rate_bpm} type="number" onChange={(value) => patch("heart_rate_bpm", value)} />
+              <TextField label="SpO2" value={form.spo2_percent} type="number" onChange={(value) => patch("spo2_percent", value)} />
+              <TextField label="SCL" value={form.scl_us} type="number" onChange={(value) => patch("scl_us", value)} />
+              <TextField label="SCR Peak Count" value={form.scr_peak_count} type="number" onChange={(value) => patch("scr_peak_count", value)} />
+              <TextField label="SCR Mean" value={form.scr_mean} type="number" onChange={(value) => patch("scr_mean", value)} />
             </div>
           </section>
 
@@ -495,41 +573,45 @@ export default function Sessions() {
         </div>
       ) : (
         <div className="min-w-0 overflow-x-auto rounded border border-border bg-card shadow-sm">
-          <table className="min-w-[1120px] w-full text-xs">
+          <table className="min-w-[1260px] w-full text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/60">
-                {["Session ID", "Participant", "Condition", "Date/Time", "ECG", "HRV", "EDA", "Temp", "Questionnaire", "Doctor", "Quality", "Status", "Actions"].map((h) => (
+                {["Participant_ID", "Participant_name", "Session_ID", "Condition", "Status", "Date and Time", "Duration Seconds", "Task/Notes", "Physiological Data", "Audio Data", "Questionnaire completed", "Edit"].map((h) => (
                   <th key={h} className="whitespace-nowrap px-2.5 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={13} className="py-12 text-center text-muted-foreground">No sessions found</td></tr>
+                <tr><td colSpan={12} className="py-12 text-center text-muted-foreground">No sessions found</td></tr>
               ) : filtered.map((s, i) => (
                 <tr
                   key={s.recordId || s.id}
-                  className={`border-b border-border/50 transition-colors hover:bg-blue-50/50 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
+                  onClick={() => setSelected(s)}
+                  className={`cursor-pointer border-b border-border/50 transition-colors hover:bg-blue-50/50 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
                 >
-                  <td onClick={() => setSelected(s)} className="cursor-pointer px-2.5 py-2 font-mono font-semibold text-[#1a3461]">{s.id}</td>
-                  <td onClick={() => setSelected(s)} className="cursor-pointer px-2.5 py-2 font-mono text-muted-foreground">{s.participantId}</td>
+                  <td className="px-2.5 py-2 font-mono text-muted-foreground">{s.participantId}</td>
+                  <td className="px-2.5 py-2 text-muted-foreground">{s.participantName}</td>
+                  <td className="px-2.5 py-2 font-mono font-semibold text-[#1a3461]">{s.id}</td>
                   <td className="px-2.5 py-2">{conditionBadge(s.condition)}</td>
-                  <td className="whitespace-nowrap px-2.5 py-2 font-mono text-muted-foreground">{s.date || "—"} {s.time || ""}</td>
-                  <td className="px-2.5 py-2"><CheckIcon value={s.ecgCollected} /></td>
-                  <td className="px-2.5 py-2"><Metric value={s.hrv} unit="ms" /></td>
-                  <td className="px-2.5 py-2"><Metric value={s.eda} unit="μS" /></td>
-                  <td className="px-2.5 py-2"><Metric value={s.temp} unit="°C" /></td>
-                  <td className="px-2.5 py-2"><CheckIcon value={s.questionnaireCompleted} /></td>
-                  <td className="px-2.5 py-2">{assessmentBadge(s.doctorAssessmentStatus)}</td>
-                  <td className="px-2.5 py-2">{qualityBadge(s.signalQuality)}</td>
                   <td className="px-2.5 py-2">{sessionStatusBadge(s.status)}</td>
+                  <td className="whitespace-nowrap px-2.5 py-2 font-mono text-muted-foreground">{s.date || "—"} {s.time || ""}</td>
+                  <td className="px-2.5 py-2 font-mono text-muted-foreground">{formatDuration(s.durationSeconds)}</td>
+                  <td className="max-w-[220px] truncate px-2.5 py-2 text-muted-foreground" title={s.task || ""}>{s.task || "-"}</td>
+                  <td className="px-2.5 py-2"><TakenLabel value={s.ecgCollected} /></td>
+                  <td className="px-2.5 py-2"><TakenLabel value={s.audioCollected} /></td>
+                  <td className="px-2.5 py-2"><TakenLabel value={s.questionnaireCompleted} takenText="Completed" /></td>
                   <td className="px-2.5 py-2">
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setEditing(s)} className="rounded border border-border px-2 py-1 text-[10px] font-semibold hover:bg-muted">
-                        Edit
-                      </button>
-                      <button onClick={() => setSelected(s)} className="rounded p-1 text-muted-foreground hover:bg-muted">›</button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setEditing(s);
+                      }}
+                      className="rounded border border-border px-2 py-1 text-[10px] font-semibold hover:bg-muted"
+                    >
+                      Edit
+                    </button>
                   </td>
                 </tr>
               ))}

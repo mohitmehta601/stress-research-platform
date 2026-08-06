@@ -14,7 +14,7 @@ const EXPORT_CONFIGS = [
   {
     id: "session.csv",
     label: "Research Sessions Only",
-    description: "Session metadata including timestamps, conditions, status, and quality flags.",
+    description: "Session rows with participant details, duration, notes, and collection status.",
     color: "border-indigo-200 bg-indigo-50",
   },
   {
@@ -37,15 +37,24 @@ const EXPORT_CONFIGS = [
   },
 ];
 
-function DataCell({ value }: { value: boolean }) {
+function DataCell({ value, trueText = "Taken" }: { value: boolean; trueText?: string }) {
   return (
     <td className="px-2 py-2 text-center">
       {value
-        ? <span className="text-emerald-600 font-semibold">yes</span>
-        : <span className="text-red-500 font-mono text-[10px] font-medium">missing</span>
+        ? <span className="text-emerald-600 font-semibold">{trueText}</span>
+        : <span className="text-red-500 font-mono text-[10px] font-medium">Not Taken</span>
       }
     </td>
   );
+}
+
+function formatDuration(seconds: number | null): string {
+  if (seconds === null || !Number.isFinite(seconds)) return "-";
+  const totalSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+  return [hours, minutes, remainingSeconds].map((value) => String(value).padStart(2, "0")).join(":");
 }
 
 export default function Export() {
@@ -146,37 +155,39 @@ export default function Export() {
       <div className="min-w-0 overflow-hidden rounded border border-border bg-card shadow-sm">
         <div className="px-4 py-3 border-b border-border flex items-center justify-between">
           <div>
-            <span className="text-xs font-semibold text-foreground">Final Dataset Preview</span>
+            <span className="text-xs font-semibold text-foreground">Research Sessions CSV Preview</span>
             <span className="text-[10px] text-muted-foreground ml-2">live rows from current MongoDB sessions</span>
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-[760px] w-full text-xs">
+          <table className="min-w-[1260px] w-full text-xs">
             <thead>
               <tr className="bg-muted/60 border-b border-border">
-                {["Participant", "Session", "Condition", "ECG", "HRV", "EDA", "Temp", "Questionnaire", "Doctor Label"].map((h) => (
+                {["Participant_ID", "Participant_name", "Session_ID", "Condition", "Status", "Date and Time", "Duration Seconds", "Task/Notes", "Physiological Data", "Audio Data", "Questionnaire completed"].map((h) => (
                   <th key={h} className="text-center px-2 py-2.5 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold whitespace-nowrap first:text-left first:pl-3 last:text-left">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {sessions.length === 0 ? (
-                <tr><td colSpan={9} className="py-10 text-center text-muted-foreground">No session rows available</td></tr>
+                <tr><td colSpan={11} className="py-10 text-center text-muted-foreground">No session rows available</td></tr>
               ) : sessions.slice(0, 12).map((row, i) => (
                 <tr key={row.recordId || `${row.participantId}-${row.id}`} className={`border-b border-border/50 ${i % 2 === 1 ? "bg-muted/20" : ""}`}>
                   <td className="pl-3 px-2 py-2 font-mono font-semibold text-[#1a3461]">{row.participantId}</td>
+                  <td className="px-2 py-2 text-muted-foreground text-center">{row.participantName}</td>
                   <td className="px-2 py-2 font-mono text-muted-foreground text-center">{row.id}</td>
                   <td className="px-2 py-2 text-center">
                     <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${row.condition === "relaxed" ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700"}`}>
                       {row.condition}
                     </span>
                   </td>
+                  <td className="px-2 py-2 text-center font-mono text-muted-foreground">{row.status}</td>
+                  <td className="px-2 py-2 text-center font-mono text-muted-foreground">{row.date || "-"} {row.time || ""}</td>
+                  <td className="px-2 py-2 text-center font-mono text-muted-foreground">{formatDuration(row.durationSeconds)}</td>
+                  <td className="max-w-[200px] truncate px-2 py-2 text-muted-foreground" title={row.task || ""}>{row.task || "-"}</td>
                   <DataCell value={row.ecgCollected} />
-                  <DataCell value={row.hrv !== null} />
-                  <DataCell value={row.eda !== null} />
-                  <DataCell value={row.temp !== null} />
-                  <DataCell value={row.questionnaireCompleted} />
-                  <DataCell value={row.doctorAssessmentStatus === "completed"} />
+                  <DataCell value={row.audioCollected} />
+                  <DataCell value={row.questionnaireCompleted} trueText="Completed" />
                 </tr>
               ))}
             </tbody>

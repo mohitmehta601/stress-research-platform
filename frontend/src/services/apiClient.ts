@@ -108,14 +108,23 @@ type BackendSession = {
   participant_name?: string;
   condition?: "relaxed" | "stress";
   status?: string;
+  task?: string | null;
   started_at?: string | null;
   completed_at?: string | null;
+  duration_seconds?: number | null;
   signal_quality?: "good" | "moderate" | "poor" | "pending" | null;
   collected?: {
     physiological?: boolean;
+    audio?: boolean;
     questionnaire?: boolean;
     doctor_assessment?: boolean;
   };
+  audio?: unknown;
+  audio_data?: unknown;
+  audio_recording?: unknown;
+  audio_url?: string | null;
+  audio_file?: string | null;
+  audio_path?: string | null;
   physiological?: {
     heart_rate?: number | null;
     hrv?: number | null;
@@ -151,6 +160,14 @@ export type ManualSessionPayload = {
   eda?: number | null;
   temperature?: number | null;
   respiration?: number | null;
+  mean_temp?: number | null;
+  rmssd_ms?: number | null;
+  sdnn_ms?: number | null;
+  heart_rate_bpm?: number | null;
+  spo2_percent?: number | null;
+  scl_us?: number | null;
+  scr_peak_count?: number | null;
+  scr_mean?: number | null;
   questionnaire_completed: boolean;
   questionnaire_score?: number | null;
   doctor_assessment_completed: boolean;
@@ -440,21 +457,34 @@ function toSensorSnapshot(item: BackendPhysio): SensorSnapshot {
 
 function toSession(item: BackendSession): Session {
   const when = splitDateTime(item.started_at);
+  const hasAudio = Boolean(
+    item.collected?.audio
+    || item.audio
+    || item.audio_data
+    || item.audio_recording
+    || item.audio_url
+    || item.audio_file
+    || item.audio_path
+  );
   return {
     recordId: item.id || item._id,
     id: item.session_code || item.id || item._id || "Unknown",
     participantRecordId: item.participant_object_id || item.participant_id,
     participantId: item.participant_code || item.participant_id || "Unknown",
+    participantName: item.participant_name || "Unknown participant",
     condition: item.condition || "relaxed",
     date: when.date,
     time: when.time,
+    task: item.task ?? null,
+    durationSeconds: item.duration_seconds ?? null,
     status: normalizeStatus(item.status),
     ecgCollected: Boolean(item.collected?.physiological),
-    hrv: item.physiological?.hrv ?? null,
-    eda: item.physiological?.eda ?? null,
-    temp: item.physiological?.temperature ?? null,
+    audioCollected: hasAudio,
+    hrv: item.physiological?.rmssd_ms ?? item.physiological?.hrv ?? null,
+    eda: item.physiological?.scl_us ?? item.physiological?.eda ?? null,
+    temp: item.physiological?.mean_temp ?? item.physiological?.temperature ?? null,
     respiration: item.physiological?.respiration ?? null,
-    avgHeartRate: item.physiological?.heart_rate ?? null,
+    avgHeartRate: item.physiological?.heart_rate_bpm ?? item.physiological?.heart_rate ?? null,
     rmssdMs: item.physiological?.rmssd_ms ?? item.physiological?.hrv ?? null,
     sdnnMs: item.physiological?.sdnn_ms ?? null,
     spo2Percent: item.physiological?.spo2_percent ?? null,
@@ -753,6 +783,7 @@ export async function getSession(id: string): Promise<Session | null> {
     physiological: detail.physiological,
     collected: {
       physiological: Boolean(detail.physiological),
+      audio: Boolean(detail.session?.audio),
       questionnaire: Boolean(detail.questionnaire),
       doctor_assessment: Boolean(detail.doctor_assessment),
     },

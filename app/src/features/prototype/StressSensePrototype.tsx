@@ -325,11 +325,11 @@ function SplashScreen({ nav }: { nav: Nav }) {
         <div className="w-24 h-24 rounded-3xl flex items-center justify-center mb-4 shadow-lg overflow-hidden bg-white" style={{ border: "1.5px solid rgba(255,255,255,0.55)" }}>
           <img
             src="/logo.png"
-            alt="StressSense logo"
+            alt="Stress Sense logo"
             className="h-full w-full object-cover"
           />
         </div>
-        <h1 className="text-white text-3xl font-bold tracking-tight mb-1" style={{ fontFamily: "'Outfit', sans-serif" }}>StressSense</h1>
+        <h1 className="text-white text-3xl font-bold tracking-tight mb-1" style={{ fontFamily: "'Outfit', sans-serif" }}>Stress Sense</h1>
         <p className="text-blue-200 text-xs text-center font-medium tracking-wide">Multimodal Stress Data Collection Platform</p>
 
         {/* Illustration */}
@@ -633,7 +633,7 @@ function LoginScreen({ nav, onLogin }: { nav: Nav; onLogin: (role: "participant"
           <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-3 shadow overflow-hidden bg-white ring-1 ring-blue-100">
             <img
               src="/logo.png"
-              alt="StressSense logo"
+              alt="Stress Sense logo"
               className="h-full w-full object-cover"
             />
           </div>
@@ -1853,7 +1853,7 @@ function AudioRecordingScreen({ nav, sessionType }: { nav: Nav; sessionType: Ses
     } catch (err) {
       const message = err instanceof AudioStorageError
         ? err.message
-        : "Microphone permission was denied. Allow microphone access for StressSense and try again."
+        : "Microphone permission was denied. Allow microphone access for Stress Sense and try again."
       setCanOpenSettings(err instanceof AudioStorageError && err.code === "permission_permanently_denied")
       setError(message)
     }
@@ -1885,6 +1885,10 @@ function AudioRecordingScreen({ nav, sessionType }: { nav: Nav; sessionType: Ses
       })
       setSavedAudio(result)
       localStorage.setItem(`stresssense_audio_${api.activeSessionId ?? "current"}`, JSON.stringify(result))
+      await api.saveAudioMetadata({
+        ...result,
+        sessionType,
+      })
       window.setTimeout(() => nav("questionnaire", { sessionType }), 1400)
     } catch (err) {
       const message = err instanceof Error ? err.message : "Audio could not be saved to phone storage."
@@ -2789,7 +2793,7 @@ function StaffLoginScreen({ nav, onLogin }: { nav: Nav; onLogin: (r: "participan
           <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-3 shadow-lg overflow-hidden bg-white" style={{ border: "1.5px solid rgba(255,255,255,0.55)" }}>
             <img
               src="/logo.png"
-              alt="StressSense logo"
+              alt="Stress Sense logo"
               className="h-full w-full object-cover"
             />
           </div>
@@ -3592,7 +3596,7 @@ export default function App() {
         <div>
           <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest mb-3">App Info</p>
           <div className="space-y-2 text-xs text-white/50">
-            <p><span className="text-white/70 font-semibold">App:</span> StressSense</p>
+            <p><span className="text-white/70 font-semibold">App:</span> Stress Sense</p>
             <p><span className="text-white/70 font-semibold">Role:</span> {role}</p>
             <p><span className="text-white/70 font-semibold">Session:</span> {sessionType}</p>
             <p><span className="text-white/70 font-semibold">Screens:</span> 28 / 28</p>

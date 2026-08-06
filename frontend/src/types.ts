@@ -33,11 +33,15 @@ export interface Session {
   id: string;
   participantRecordId?: string;
   participantId: string;
+  participantName: string;
   condition: "relaxed" | "stress";
   date: string;
   time: string;
+  task: string | null;
+  durationSeconds: number | null;
   status: "completed" | "in-progress" | "pending-review" | "incomplete";
   ecgCollected: boolean;
+  audioCollected: boolean;
   hrv: number | null;
   eda: number | null;
   temp: number | null;

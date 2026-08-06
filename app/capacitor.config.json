@@ -1,6 +1,6 @@
 {
   "appId": "com.pulselab.checkin",
-  "appName": "StressSense",
+  "appName": "Stress Sense",
   "webDir": "dist-apk",
   "server": {
     "androidScheme": "https"

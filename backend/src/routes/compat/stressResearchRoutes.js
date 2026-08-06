@@ -325,6 +325,7 @@ async function publicSessionRow(item) {
     signal_quality: physiological?.signal_quality || item.signal_quality || "pending",
     collected: {
       physiological: Boolean(physiological),
+      audio: Boolean(item.audio || item.audio_data || item.audio_recording || item.audio_url || item.audio_file || item.audio_path),
       questionnaire: Boolean(questionnaire),
       doctor_assessment: Boolean(assessment)
     },
@@ -343,7 +344,25 @@ function publicSession(document) {
     task: document.task,
     started_at: document.started_at,
     completed_at: document.completed_at,
-    duration_seconds: document.duration_seconds
+    duration_seconds: document.duration_seconds,
+    audio: document.audio || null
+  };
+}
+
+function normalizeAudioMetadata(payload = {}) {
+  const now = new Date();
+  const fileName = String(payload.file_name || payload.fileName || "").trim();
+  const location = String(payload.location || "").trim();
+  const uri = String(payload.uri || "").trim();
+  if (!fileName && !location && !uri) return null;
+  return {
+    file_name: fileName || null,
+    location: location || null,
+    uri: uri || null,
+    session_type: ["relaxed", "stress"].includes(payload.session_type || payload.sessionType) ? (payload.session_type || payload.sessionType) : null,
+    storage: payload.storage || "offline_phone",
+    saved_at: payload.saved_at ? new Date(payload.saved_at) : now,
+    updated_at: now
   };
 }
 
@@ -843,6 +862,7 @@ router.post("/sessions/complete-flow", requireParticipant, asyncHandler(async (r
     duration_seconds: 0,
     signal_quality: physiological?.signal_quality || "pending",
     physiological,
+    audio: normalizeAudioMetadata(req.body.audio),
     questionnaire,
     created_at: now,
     updated_at: now
@@ -861,6 +881,7 @@ router.get("/sessions/me", requireParticipant, asyncHandler(async (req, res) => 
     signal_quality: item.physiological?.signal_quality || item.signal_quality || "pending",
     collected: {
       physiological: Boolean(item.physiological),
+      audio: Boolean(item.audio || item.audio_data || item.audio_recording || item.audio_url || item.audio_file || item.audio_path),
       questionnaire: Boolean(item.questionnaire),
       doctor_assessment: Boolean(item.doctor_assessment)
     },
@@ -889,6 +910,17 @@ router.post("/sessions/:sessionId/physiological", requireParticipant, asyncHandl
   await upsertPhysiologicalRecord(session, physiological);
   await createNotification("physiological_data_uploaded", "Physiological data uploaded", `Sensor readings saved for ${session.session_code || req.params.sessionId}.`, session._id);
   res.status(201).json({ status: "saved", session_id: req.params.sessionId, physiological: publicPhysiological(physiological) });
+}));
+
+router.post("/sessions/:sessionId/audio", requireParticipant, asyncHandler(async (req, res) => {
+  if (!Types.ObjectId.isValid(req.params.sessionId)) throw makeError(400, "Invalid session ID");
+  const session = await ResearchSession.findOne({ _id: req.params.sessionId, participant_id: req.participant._id }).lean();
+  if (!session) throw makeError(404, "Session not found");
+  const audio = normalizeAudioMetadata(req.body);
+  if (!audio) throw makeError(400, "Audio metadata is required");
+  await ResearchSession.updateOne({ _id: session._id }, { $set: { audio, updated_at: new Date() } });
+  await createNotification("audio_saved_offline", "Audio saved on phone", `Offline audio record saved for ${session.session_code || req.params.sessionId}.`, session._id);
+  res.status(201).json({ status: "saved", session_id: req.params.sessionId, audio });
 }));
 
 router.post("/sessions/:sessionId/thingspeak-sync", requireParticipant, asyncHandler(async (req, res) => {
