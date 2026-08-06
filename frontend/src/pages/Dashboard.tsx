@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
-  CheckCircle2,
+  ClipboardList,
   FlaskConical,
   Heart,
   RotateCcw,
   Shield,
-  ShieldCheck,
   Thermometer,
   Users,
   Waves,
@@ -52,7 +51,7 @@ function PageHeader({
 
         <p className="mt-0.5 text-xs text-muted-foreground">
           Participant enrolment, research sessions, physiological
-          observations, and dataset quality.
+          observations, and questionnaire responses.
         </p>
       </div>
 
@@ -248,12 +247,6 @@ export default function Dashboard() {
       },
     ];
 
-    const completeDataSessions = sessions.filter(
-      (session) =>
-        session.ecgCollected &&
-        session.questionnaireCompleted,
-    ).length;
-
     const sessionRows = sessions;
 
     const hasConditionData = conditionData.some(
@@ -262,7 +255,6 @@ export default function Dashboard() {
 
     return {
       conditionData,
-      completeDataSessions,
       sessionRows,
       hasConditionData,
     };
@@ -301,89 +293,70 @@ export default function Dashboard() {
 
   const {
     conditionData,
-    completeDataSessions,
     sessionRows,
     hasConditionData,
   } = dashboardData;
 
-  const hasSavedSensorRecords = summary.sensorRecords > 0;
-  const sensorValue = (
-    key: keyof SensorSnapshot,
-    averageValue: number | null,
-    latestValue: number | null | undefined,
-  ) => (
-    cleanSensorValue(key, latestValue)
-    ?? cleanSensorValue(key, averageValue)
-  );
   const sourceText = latestSensor
     ? "Latest values fetched from the configured ThingSpeak channel."
-    : hasSavedSensorRecords
-      ? "Showing saved research observations after removing invalid outliers."
-      : "No saved observations or live ThingSpeak reading available.";
+    : "No live ThingSpeak sensor reading available.";
 
   const physiologicalMetrics = [
     {
-      label: "Mean Temp",
-      value: sensorValue("meanTemp", summary.avgTemperature, latestSensor?.meanTemp),
+      label: "Mean_Temp",
+      value: cleanSensorValue("meanTemp", latestSensor?.meanTemp),
       unit: "C",
       icon: Thermometer,
       iconClassName: "text-orange-500",
     },
     {
-      label: "RMSSD",
-      value: sensorValue("rmssdMs", summary.avgHrv, latestSensor?.rmssdMs),
+      label: "RMSSD_ms",
+      value: cleanSensorValue("rmssdMs", latestSensor?.rmssdMs),
       unit: "ms",
       icon: Waves,
       iconClassName: "text-blue-500",
     },
     {
-      label: "SDNN",
-      value: sensorValue("sdnnMs", summary.avgSdnn, latestSensor?.sdnnMs),
+      label: "SDNN_ms",
+      value: cleanSensorValue("sdnnMs", latestSensor?.sdnnMs),
       unit: "ms",
       icon: Waves,
       iconClassName: "text-violet-600",
     },
     {
-      label: "Heart Rate",
-      value: sensorValue("heartRateBpm", summary.avgHeartRate, latestSensor?.heartRateBpm),
+      label: "Heart_Rate_bpm",
+      value: cleanSensorValue("heartRateBpm", latestSensor?.heartRateBpm),
       unit: "bpm",
       icon: Heart,
       iconClassName: "text-red-500",
     },
     {
-      label: "SpO2",
-      value: sensorValue("spo2Percent", summary.avgSpo2, latestSensor?.spo2Percent),
+      label: "SpO2_percent",
+      value: cleanSensorValue("spo2Percent", latestSensor?.spo2Percent),
       unit: "%",
       icon: Shield,
       iconClassName: "text-emerald-600",
     },
     {
-      label: "SCL",
-      value: sensorValue("sclUs", summary.avgEda, latestSensor?.sclUs),
+      label: "SCL_uS",
+      value: cleanSensorValue("sclUs", latestSensor?.sclUs),
       unit: "uS",
       icon: Zap,
       iconClassName: "text-teal-600",
     },
     {
-      label: "SCR Peaks",
-      value: sensorValue("scrPeakCount", summary.avgScrPeakCount, latestSensor?.scrPeakCount),
+      label: "SCR_Peak_Count",
+      value: cleanSensorValue("scrPeakCount", latestSensor?.scrPeakCount),
       unit: "count",
       icon: Activity,
       iconClassName: "text-amber-600",
     },
     {
-      label: "SCR Mean",
-      value: sensorValue("scrMean", summary.avgScrMean, latestSensor?.scrMean),
+      label: "SCR_Mean",
+      value: cleanSensorValue("scrMean", latestSensor?.scrMean),
       unit: "",
       icon: Activity,
       iconClassName: "text-indigo-600",
-    },
-    {
-      label: "Stress Score",
-      value: summary.avgStressScore,
-      unit: "/100",
-      icon: Activity,
-      iconClassName: "text-violet-600",
     },
   ];
 
@@ -402,14 +375,6 @@ export default function Dashboard() {
         />
 
         <StatCard
-          label="Consented Participants"
-          value={summary.consentedParticipants}
-          sub={`/ ${summary.totalParticipants}`}
-          icon={ShieldCheck}
-          iconColor="text-teal-600"
-        />
-
-        <StatCard
           label="Research Sessions"
           value={summary.totalSessions}
           icon={FlaskConical}
@@ -417,11 +382,17 @@ export default function Dashboard() {
         />
 
         <StatCard
-          label="Complete Datasets"
-          value={completeDataSessions}
-          sub={`/ ${summary.totalSessions}`}
-          icon={CheckCircle2}
+          label="Physiological Data"
+          value={summary.sensorRecords}
+          icon={Activity}
           iconColor="text-emerald-600"
+        />
+
+        <StatCard
+          label="Questionnaire Response"
+          value={summary.questionnaireRecords}
+          icon={ClipboardList}
+          iconColor="text-teal-600"
         />
       </div>
 
@@ -452,7 +423,7 @@ export default function Dashboard() {
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-9">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-8">
           {physiologicalMetrics.map(
             ({
               label,

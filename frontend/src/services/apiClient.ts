@@ -185,6 +185,7 @@ type BackendPhysio = {
 type BackendQuestionnaire = {
   id?: string;
   participant_id?: string;
+  participant_name?: string | null;
   session_id?: string;
   condition?: "relaxed" | "stress";
   questionnaire_key?: string | null;
@@ -499,6 +500,7 @@ function toQuestionnaire(item: BackendQuestionnaire): QuestionnaireRecord {
   return {
     id: item.id || `${item.participant_id}-${item.session_id}`,
     participantId: item.participant_id || "Unknown",
+    participantName: item.participant_name || "-",
     sessionId: item.session_id || "Unknown",
     condition: item.condition || "relaxed",
     questionnaireKey: item.questionnaire_key ?? null,

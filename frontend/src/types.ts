@@ -84,6 +84,7 @@ export interface PhysioRecord {
 export interface QuestionnaireRecord {
   id: string;
   participantId: string;
+  participantName: string;
   sessionId: string;
   condition: "relaxed" | "stress";
   questionnaireKey?: string | null;

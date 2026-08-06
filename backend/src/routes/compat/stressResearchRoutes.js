@@ -1291,6 +1291,7 @@ router.get("/dashboard/questionnaires", asyncHandler(async (req, res) => {
     return {
       id: String(item._id),
       participant_id: item.participant_code || person.participant_code || String(item.participant_id || ""),
+      participant_name: person.name || "",
       session_id: item.session_code || String(item.session_id || ""),
       condition: item.condition || "relaxed",
       questionnaire_key: item.questionnaire_key,

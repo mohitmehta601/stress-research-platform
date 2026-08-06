@@ -1,27 +1,101 @@
 import { Participant, ResearchSession, Physiological, QuestionnaireResponse, DoctorAssessment } from "../models/index.js";
-import { csvResponse } from "../utils/format.js";
+import { csvResponse, formatDateTimeIST } from "../utils/format.js";
 
 const participantFilter = { role: "participant" };
+const PARTICIPANT_EXPORT_FIELDS = [
+  "ParticipantID",
+  "ParticipantObjectID",
+  "Name",
+  "Email",
+  "Role",
+  "Active",
+  "ApprovalStatus",
+  "EmailVerified",
+  "ConsentCompleted",
+  "ProfileCompleted",
+  "ConsentVersion",
+  "Age",
+  "Gender",
+  "Occupation",
+  "HeightCm",
+  "WeightKg",
+  "BMI",
+  "Education",
+  "Smoking",
+  "Alcohol",
+  "SleepHours",
+  "ExerciseDaysPerWeek",
+  "HeartDisease",
+  "Hypertension",
+  "Diabetes",
+  "MedicationNotes",
+  "TotalSessions",
+  "CompletedSessions",
+  "LastSessionAt",
+  "CreatedAt",
+  "UpdatedAt",
+  "ApprovedAt",
+  "EmailVerifiedAt"
+];
 
 export async function participantRows() {
-  const participants = await Participant.find(participantFilter).lean();
+  const [participants, sessionCounts] = await Promise.all([
+    Participant.find(participantFilter).lean(),
+    ResearchSession.aggregate([
+      {
+        $group: {
+          _id: "$participant_id",
+          sessions: { $sum: 1 },
+          completed_sessions: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "completed"] }, 1, 0]
+            }
+          },
+          last_session_at: { $max: "$started_at" }
+        }
+      }
+    ])
+  ]);
+  const sessionsByParticipant = new Map(
+    sessionCounts.map((item) => [String(item._id), item])
+  );
   return participants.map((item) => {
     const profile = item.profile || {};
+    const sessionSummary = sessionsByParticipant.get(String(item._id)) || {};
     return {
       ParticipantID: item.participant_code || "",
       ParticipantObjectID: String(item._id || ""),
       Name: item.name || "",
       Email: item.email || "",
-      Age: profile.age || "",
-      Gender: profile.gender || "",
-      HeightCm: profile.height_cm || "",
-      WeightKg: profile.weight_kg || "",
-      BMI: profile.bmi || "",
-      Education: profile.education || "",
-      Occupation: profile.occupation || "",
+      Role: item.role || "",
+      Active: item.is_active !== false,
+      ApprovalStatus: item.approval_status || "",
+      EmailVerified: Boolean(item.email_verified),
       ConsentCompleted: Boolean(item.consent_completed),
       ProfileCompleted: Boolean(item.profile_completed),
-      CreatedAt: item.created_at || ""
+      ConsentVersion: item.consent?.version ?? "",
+      Age: profile.age ?? "",
+      Gender: profile.gender ?? "",
+      Occupation: profile.occupation ?? "",
+      HeightCm: profile.height_cm ?? "",
+      WeightKg: profile.weight_kg ?? "",
+      BMI: profile.bmi ?? "",
+      Education: profile.education ?? "",
+      Smoking: profile.smoking ?? "",
+      Alcohol: profile.alcohol ?? "",
+      SleepHours: profile.sleep_hours ?? "",
+      ExerciseDaysPerWeek: profile.exercise_days_per_week ?? "",
+      HeartDisease: Boolean(profile.heart_disease),
+      Hypertension: Boolean(profile.hypertension),
+      Diabetes: Boolean(profile.diabetes),
+      MedicationNotes: profile.medication ?? "",
+      TotalSessions: sessionSummary.sessions ?? 0,
+      CompletedSessions: sessionSummary.completed_sessions ?? 0,
+      LastSessionAt: sessionSummary.last_session_at || "",
+      CreatedAt: item.created_at || "",
+      UpdatedAt: item.updated_at || "",
+      ApprovedAt: item.approved_at || "",
+      EmailVerifiedAt: item.email_verified_at || ""
     };
   });
 }
@@ -54,40 +128,63 @@ export async function physiologicalRows() {
   return records.map((item) => {
     const person = map.get(String(item.participant_id)) || {};
     return {
-      ParticipantID: item.participant_code || person.participant_code || String(item.participant_id || ""),
-      SessionID: item.session_code || String(item.session_id || ""),
+      Participant_ID: item.participant_code || person.participant_code || String(item.participant_id || ""),
+      Name_Participant: person.name || "",
+      Session_ID: item.session_code || String(item.session_id || ""),
       Condition: item.condition || "",
-      ECG: item.ecg || "",
-      HeartRate: item.heart_rate || "",
-      HRV: item.hrv || "",
+      Mean_Temp: item.mean_temp ?? item.temperature ?? "",
       RMSSD_ms: item.rmssd_ms ?? item.hrv ?? "",
       SDNN_ms: item.sdnn_ms ?? "",
+      Heart_Rate_bpm: item.heart_rate_bpm ?? item.heart_rate ?? "",
       SpO2_percent: item.spo2_percent ?? "",
-      EDA: item.eda || "",
       SCL_uS: item.scl_us ?? item.eda ?? "",
       SCR_Peak_Count: item.scr_peak_count ?? "",
       SCR_Mean: item.scr_mean ?? "",
-      Temperature: item.temperature || "",
-      Mean_Temp: item.mean_temp ?? item.temperature ?? "",
-      Respiration: item.respiration || "",
-      SignalQuality: item.signal_quality || "",
-      ThingSpeakEntryID: item.thingspeak?.entry_id || "",
-      RecordedAt: item.recorded_at || ""
+      Recorder_AT: item.recorded_at ? formatDateTimeIST(item.recorded_at) : ""
     };
   });
 }
 
 export async function questionnaireRows() {
   const responses = await QuestionnaireResponse.find({}).sort({ submitted_at: -1 }).lean();
-  return responses.map((response) => ({
-    ParticipantID: response.participant_code || String(response.participant_id || ""),
-    SessionID: response.session_code || String(response.session_id || ""),
-    Condition: response.condition || "",
-    QuestionnaireKey: response.questionnaire_key || "",
-    Score: response.score || "",
-    SubmittedAt: response.submitted_at || "",
-    Answers: response.answers || {}
-  }));
+  const people = await Participant.find({
+    _id: { $in: responses.map((item) => item.participant_id).filter(Boolean) }
+  }).lean();
+  const map = new Map(people.map((item) => [String(item._id), item]));
+  const optionLabels = {
+    0: "Never",
+    1: "Rarely",
+    2: "Sometimes",
+    3: "Often",
+    4: "Always"
+  };
+
+  return responses.map((response) => {
+    const person = map.get(String(response.participant_id)) || {};
+    const row = {
+      Participant_ID: response.participant_code || String(response.participant_id || ""),
+      Name_Participant: person.name || "",
+      Session_ID: response.session_code || String(response.session_id || ""),
+      Condition: response.condition || "",
+      Score: response.score ?? "",
+      Submitted_At: response.submitted_at ? formatDateTimeIST(response.submitted_at) : ""
+    };
+
+    const answers = Object.entries(response.answers || {}).sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }));
+    for (const [questionId, answer] of answers) {
+      const value = answer && typeof answer === "object" && !Array.isArray(answer)
+        ? answer.raw_score ?? answer.scored_value ?? ""
+        : answer ?? "";
+      const question = answer && typeof answer === "object" && !Array.isArray(answer)
+        ? answer.question ?? questionId
+        : questionId;
+      row[`${questionId}_Question`] = question;
+      row[`${questionId}_Option_Value`] = value;
+      row[`${questionId}_Option_Selected`] = optionLabels[value] || "";
+    }
+
+    return row;
+  });
 }
 
 export async function doctorRows() {
@@ -158,12 +255,12 @@ export async function finalDatasetRows() {
 }
 
 export const EXPORTS = {
-  "participant.csv": [participantRows, ["ParticipantID", "ParticipantObjectID", "Name", "Email", "Age", "Gender", "HeightCm", "WeightKg", "BMI", "Education", "Occupation"]],
-  "participant_profile.csv": [participantRows, ["ParticipantID", "Name", "Email", "Age", "Gender", "HeightCm", "WeightKg", "BMI", "Education", "Occupation"]],
+  "participant.csv": [participantRows, PARTICIPANT_EXPORT_FIELDS],
+  "participant_profile.csv": [participantRows, PARTICIPANT_EXPORT_FIELDS],
   "session.csv": [sessionRows, ["SessionID", "SessionObjectID", "ParticipantID", "ParticipantObjectID", "Condition", "Task", "Status", "SignalQuality", "StartedAt", "CompletedAt", "DurationSeconds"]],
   "research_sessions.csv": [sessionRows, ["SessionID", "SessionObjectID", "ParticipantID", "Condition", "Task", "Status", "StartedAt", "CompletedAt", "DurationSeconds"]],
-  "physiological.csv": [physiologicalRows, ["ParticipantID", "SessionID", "Condition", "ECG", "Mean_Temp", "RMSSD_ms", "SDNN_ms", "HeartRate", "SpO2_percent", "SCL_uS", "SCR_Peak_Count", "SCR_Mean", "EDA", "Temperature", "Respiration", "SignalQuality", "ThingSpeakEntryID", "RecordedAt"]],
-  "questionnaire.csv": [questionnaireRows, ["ParticipantID", "SessionID", "Condition", "QuestionnaireKey", "Score", "SubmittedAt", "Answers"]],
+  "physiological.csv": [physiologicalRows, ["Participant_ID", "Name_Participant", "Session_ID", "Condition", "Mean_Temp", "RMSSD_ms", "SDNN_ms", "Heart_Rate_bpm", "SpO2_percent", "SCL_uS", "SCR_Peak_Count", "SCR_Mean", "Recorder_AT"]],
+  "questionnaire.csv": [questionnaireRows, ["Participant_ID", "Name_Participant", "Session_ID", "Condition", "Score", "Submitted_At"]],
   "doctor.csv": [doctorRows, ["id", "session_id", "participant_id", "clinical_stress", "comments", "recommendation", "created_at", "updated_at"]],
   "doctor_assessment.csv": [doctorRows, ["id", "session_id", "participant_id", "clinical_stress", "comments", "recommendation", "created_at", "updated_at"]],
   "final_dataset.csv": [finalDatasetRows, ["Participant", "Session", "Condition", "ECG", "HRV", "EDA", "Temp", "Questionnaire", "Doctor Label", "ParticipantID", "ParticipantName", "ParticipantEmail", "Age", "Gender", "SessionID", "HeartRate", "Mean_Temp", "RMSSD_ms", "SDNN_ms", "SpO2_percent", "SCL_uS", "SCR_Peak_Count", "SCR_Mean", "Temperature", "Respiration", "QuestionnaireScore", "QuestionnaireAnswers", "DoctorLabel", "DoctorComments", "DoctorRecommendation"]]
